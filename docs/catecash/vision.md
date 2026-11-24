@@ -15,13 +15,21 @@ The project is in development. There is no live Catecash network or token. The s
 
 | Parameter | Catecash target |
 | --- | --- |
-| Proof of work | Scrypt |
-| Target block interval | 60 seconds |
-| Block subsidy | 10,000 Catecash units per block, starting with publicly mineable blocks |
-| Issuance end date | None planned; continuing fixed block subsidy |
-| Premine / reserved allocation | None planned |
+| Maximum supply | Unlimited |
+| Block reward | 10,000 CATE per publicly mineable block |
+| Target block time | 1 minute |
+| Expected blocks per day | ~1,440 |
+| Expected new coins per day | ~14.4 million CATE |
+| Expected new coins per year | ~5.256 billion CATE (365 days) |
+| Halving | None |
+| Transaction fees | Paid to miners, separate from the block reward |
+| Premine | None at launch |
+| Founder allocation | 0% |
+| Team allocation | 0% |
+| Mining allocation | 100% of newly issued coins |
+| Consensus | Scrypt proof of work with merged mining (AuxPoW) |
 
-These are target parameters for a new chain, not an assertion that Zebra currently implements them for Catecash. Difficulty adjustment, genesis configuration, address formats, network identifiers, merged-mining policy, activation schedule, and wallet support require a published protocol specification and tests before launch.
+The daily and yearly issuance figures assume blocks arrive exactly on the one-minute target; actual issuance varies with block production. These are target parameters for a new chain, not an assertion that Zebra currently implements them for Catecash. Difficulty adjustment, genesis configuration, address formats, network identifiers, AuxPoW validation rules, activation schedule, and wallet support require a published protocol specification and tests before launch.
 
 ## What “privacy” means here
 
