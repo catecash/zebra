@@ -27,7 +27,7 @@ use zebra_chain::{
     subtree::{NoteCommitmentSubtree, NoteCommitmentSubtreeData, NoteCommitmentSubtreeIndex},
     transaction::{self, Transaction},
     transparent,
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
     work::difficulty::PartialCumulativeWork,
 };
 
@@ -265,7 +265,7 @@ pub struct ChainInner {
     ///
     /// When a new chain is created from the finalized tip, it is initialized with the finalized tip
     /// chain value pool balances.
-    pub(crate) chain_value_pools: ValueBalance<NonNegative>,
+    pub(crate) chain_value_pools: NetworkChainValuePools,
     /// The block info after the given block height.
     pub(crate) block_info_by_height: BTreeMap<block::Height, BlockInfo>,
 }
@@ -280,7 +280,7 @@ impl Chain {
         finalized_tip_height: Height,
         note_commitment_trees: NoteCommitmentTrees,
         history_tree: Arc<HistoryTree>,
-        finalized_tip_chain_value_pools: ValueBalance<NonNegative>,
+        finalized_tip_chain_value_pools: impl Into<NetworkChainValuePools>,
     ) -> Self {
         // Passing the trees in a named struct (rather than four adjacent positional arguments, two
         // of them the same `Arc<orchard::tree::NoteCommitmentTree>` type) makes an orchard/ironwood
@@ -322,7 +322,7 @@ impl Chain {
             index_entries_by_height: Default::default(),
             partial_cumulative_work: Default::default(),
             history_trees_by_height: Default::default(),
-            chain_value_pools: finalized_tip_chain_value_pools,
+            chain_value_pools: finalized_tip_chain_value_pools.into(),
             block_info_by_height: Default::default(),
         };
 
@@ -605,7 +605,7 @@ impl Chain {
     /// Returns the non-finalized tip block height, hash, and total pool value balances.
     pub fn non_finalized_tip_with_value_balance(
         &self,
-    ) -> (Height, block::Hash, ValueBalance<NonNegative>) {
+    ) -> (Height, block::Hash, NetworkChainValuePools) {
         (
             self.non_finalized_tip_height(),
             self.non_finalized_tip_hash(),
@@ -1836,7 +1836,7 @@ impl Chain {
     pub fn partial_transparent_balance_change(
         &self,
         addresses: &HashSet<transparent::Address>,
-    ) -> (Amount<NegativeAllowed>, u64) {
+    ) -> (i128, u128) {
         self.partial_transparent_balance_change_from(addresses, self.non_finalized_root_height())
     }
 
@@ -1849,23 +1849,23 @@ impl Chain {
         &self,
         addresses: &HashSet<transparent::Address>,
         min_height: Height,
-    ) -> (Amount<NegativeAllowed>, u64) {
+    ) -> (i128, u128) {
         // Sum in i128, so partial sums can't overflow before the total is checked.
         let (balance, received) = self.transparent_transfers(addresses, min_height..).fold(
-            (0i128, 0u64),
+            (0i128, 0u128),
             |(balance, received), transfers| {
                 (
-                    balance + i128::from(transfers.balance().zatoshis()),
-                    // Saturate like the finalized path (#10556).
-                    received.saturating_add(transfers.received()),
+                    balance
+                        .checked_add(transfers.balance())
+                        .expect("address balance changes fit in i128"),
+                    received
+                        .checked_add(transfers.received())
+                        .expect("address receipts fit in u128"),
                 )
             },
         );
 
-        (
-            Amount::try_from(balance).expect("unexpected amount overflow"),
-            received,
-        )
+        (balance, received)
     }
 
     /// Returns the transparent UTXO changes for `addresses` in this non-finalized chain:
@@ -2438,7 +2438,7 @@ impl UpdateWith<(ValueBalance<NegativeAllowed>, Height, usize)> for Chain {
     ) -> Result<(), ValidateContextError> {
         match self
             .chain_value_pools
-            .add_chain_value_pool_change(*block_value_pool_change)
+            .apply_change_at_height(*block_value_pool_change, *height)
         {
             Ok(chain_value_pools) => {
                 self.chain_value_pools = chain_value_pools;
@@ -2479,7 +2479,10 @@ impl UpdateWith<(ValueBalance<NegativeAllowed>, Height, usize)> for Chain {
         if position == RevertPosition::Tip {
             self.chain_value_pools = self
                 .chain_value_pools
-                .add_chain_value_pool_change(block_value_pool_change.neg())
+                .apply_change_at_height(
+                    block_value_pool_change.neg(),
+                    height.previous().expect("non-finalized tip has a parent"),
+                )
                 .expect("reverting the tip will leave the pools in a previously valid state");
         }
         self.block_info_by_height.remove(height);

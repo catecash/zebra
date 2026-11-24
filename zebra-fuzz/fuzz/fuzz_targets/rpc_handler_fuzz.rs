@@ -385,7 +385,6 @@ impl Service<zebra_state::ReadRequest> for MockReadState {
     }
 
     fn call(&mut self, req: zebra_state::ReadRequest) -> Self::Future {
-        use zebra_chain::amount::Amount;
         use zebra_state::ReadRequest as R;
         use zebra_state::ReadResponse as Resp;
         let resp: Result<Resp, BoxError> = match req {
@@ -404,7 +403,7 @@ impl Service<zebra_state::ReadRequest> for MockReadState {
             R::FindBlockHashes { .. } => Ok(Resp::BlockHashes(Vec::new())),
             R::FindBlockHeaders { .. } => Ok(Resp::BlockHeaders(Vec::new())),
             R::AddressBalance(_) => Ok(Resp::AddressBalance {
-                balance: Amount::zero(),
+                balance: 0,
                 received: 0,
             }),
             R::TransactionIdsByAddresses { .. } => {

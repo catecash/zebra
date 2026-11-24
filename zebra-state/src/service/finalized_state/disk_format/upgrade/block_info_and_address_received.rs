@@ -11,7 +11,7 @@ use zebra_chain::{
     block::{Block, Height},
     block_info::BlockInfo,
     transparent::{self, OutPoint, Utxo},
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use crate::{
@@ -33,7 +33,7 @@ pub struct Upgrade;
 /// already there we only need to ValueBalance to keep track of the totals.
 /// Otherwise we need the block, size and utxos to compute the BlockInfo.
 enum LoadResult {
-    HasInfo(ValueBalance<NonNegative>),
+    HasInfo(NetworkChainValuePools),
     LoadedInfo {
         block: Arc<Block>,
         size: usize,
@@ -130,7 +130,7 @@ impl DiskFormatUpgrade for Upgrade {
                                 *address_balance_changes
                                     .entry(address)
                                     .or_insert_with(AddressBalanceLocationChange::empty)
-                                    .received_mut() += u64::from(output.value());
+                                    .received_mut() += u128::from(u64::from(output.value()));
                             }
                         }
                     }
@@ -153,7 +153,7 @@ impl DiskFormatUpgrade for Upgrade {
         });
 
         // Keep track of the current value pool as we iterate the blocks.
-        let mut value_pool = ValueBalance::<NonNegative>::default();
+        let mut value_pool = NetworkChainValuePools::zero(&network);
 
         for result in seq_iter {
             let (h, load_result) = result?;
@@ -181,12 +181,17 @@ impl DiskFormatUpgrade for Upgrade {
                     .expect("the finalized block has a valid subsidy and lockbox disbursement");
 
             let block_value_pool_change = block
-                .chain_value_pool_change(&utxos, deferred_pool_balance_change, &network, value_pool)
+                .chain_value_pool_change_with_parent_nsm(
+                    &utxos,
+                    deferred_pool_balance_change,
+                    &network,
+                    value_pool.nsm_amount(),
+                )
                 .expect("the finalized block has valid transaction and NSM balance changes");
 
             // Add this block's value pool changes to the total value pool.
             value_pool = value_pool
-                .add_chain_value_pool_change(block_value_pool_change)
+                .apply_change_at_height(block_value_pool_change, height)
                 .expect("value pool change should not overflow");
 
             let mut batch = DiskWriteBatch::new();

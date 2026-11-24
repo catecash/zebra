@@ -65,6 +65,56 @@ fn test_timeout() -> std::time::Duration {
 }
 
 #[test]
+fn catecash_branch_id_is_network_specific() -> Result<(), Report> {
+    let devnet = Network::CatecashDevnet;
+
+    let mut custom_bytes = hex::decode("0600008098b684d8d90a19770000000001000000000000000000")?;
+    custom_bytes[8..12].copy_from_slice(&0xea3b_eeb4_u32.to_le_bytes());
+    let custom: Transaction = custom_bytes.as_slice().zcash_deserialize_into()?;
+    let zcash: Transaction = hex::decode("0600008098b684d8d90a19770000000001000000000000000000")?
+        .as_slice()
+        .zcash_deserialize_into()?;
+
+    assert_eq!(
+        check::consensus_branch_id(&custom, Height(1), &devnet),
+        Ok(())
+    );
+    assert_eq!(
+        check::consensus_branch_id(&zcash, Height(1), &devnet),
+        Err(TransactionError::WrongConsensusBranchId)
+    );
+    let public = Network::new_default_testnet();
+    let nu7_height = NetworkUpgrade::Nu7.activation_height(&public).unwrap();
+    assert_eq!(
+        check::consensus_branch_id(&custom, nu7_height, &public),
+        Err(TransactionError::WrongConsensusBranchId)
+    );
+    assert_eq!(
+        check::consensus_branch_id(&zcash, nu7_height, &public),
+        Ok(())
+    );
+
+    for (branch_id, network) in [
+        (0x5bc6_8392_u32, Network::CatecashMainnet),
+        (0xb80d_ae22_u32, Network::CatecashTestnet),
+    ] {
+        let mut bytes = hex::decode("0600008098b684d8d90a19770000000001000000000000000000")?;
+        bytes[8..12].copy_from_slice(&branch_id.to_le_bytes());
+        let transaction: Transaction = bytes.as_slice().zcash_deserialize_into()?;
+        assert_eq!(
+            check::consensus_branch_id(&transaction, Height(1), &network),
+            Ok(())
+        );
+        assert_eq!(
+            check::consensus_branch_id(&custom, Height(1), &network),
+            Err(TransactionError::WrongConsensusBranchId)
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
 fn v5_transactions_basic_check() -> Result<(), Report> {
     let _init_guard = zebra_test::init();
 
@@ -1321,11 +1371,15 @@ async fn mempool_request_with_immature_spend_is_rejected() {
         })
         .expect("known_utxos should contain the outpoint");
 
-    let expected_error =
-        zebra_state::check::transparent_coinbase_spend(input_outpoint, spend_restriction, &utxo)
-            .map_err(Box::new)
-            .map_err(TransactionError::ValidateContextError)
-            .expect_err("check should fail");
+    let expected_error = zebra_state::check::transparent_coinbase_spend(
+        input_outpoint,
+        spend_restriction,
+        &utxo,
+        Network::Mainnet.transparent_coinbase_maturity(),
+    )
+    .map_err(Box::new)
+    .map_err(TransactionError::ValidateContextError)
+    .expect_err("check should fail");
 
     tokio::spawn(async move {
         state
@@ -1439,8 +1493,13 @@ async fn mempool_request_with_transparent_coinbase_spend_is_accepted_on_regtest(
         })
         .expect("known_utxos should contain the outpoint");
 
-    zebra_state::check::transparent_coinbase_spend(input_outpoint, spend_restriction, &utxo)
-        .expect("check should pass");
+    zebra_state::check::transparent_coinbase_spend(
+        input_outpoint,
+        spend_restriction,
+        &utxo,
+        network.transparent_coinbase_maturity(),
+    )
+    .expect("check should pass");
 
     tokio::spawn(async move {
         state

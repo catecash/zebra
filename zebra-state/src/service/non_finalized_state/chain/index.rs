@@ -27,11 +27,10 @@ pub(crate) struct BlockTransparentTransfers {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AddressBlockTransfers {
     /// The change this block makes to the address balance.
-    balance: Amount<NegativeAllowed>,
+    balance: i128,
 
-    /// The total value of the outputs this block creates for the address, saturating at
-    /// `u64::MAX` like the finalized index (#10556).
-    received: u64,
+    /// The checked wide total of outputs this block creates for the address.
+    received: u128,
 
     /// The outputs this block creates for the address, in chain order. They are shared with the
     /// block's output map.
@@ -83,7 +82,10 @@ impl BlockTransparentTransfers {
                 let (balance, transfers) =
                     address_entry(&mut by_address, address, tx_location, hash);
                 *balance += i128::from(value.zatoshis());
-                transfers.received = transfers.received.saturating_add(u64::from(value));
+                transfers.received = transfers
+                    .received
+                    .checked_add(u128::from(u64::from(value)))
+                    .expect("one block's address receipts fit in u128");
                 transfers.created.push((
                     OutputLocation::from_outpoint(transaction_location(utxo), &outpoint),
                     utxo.clone(),
@@ -117,8 +119,7 @@ impl BlockTransparentTransfers {
         let by_address = by_address
             .into_iter()
             .map(|(address, (balance, mut transfers))| {
-                transfers.balance = Amount::try_from(balance)
-                    .expect("one block can't move more than the money supply for an address");
+                transfers.balance = balance;
                 transfers.spent.sort_unstable();
                 (address, transfers)
             })
@@ -178,7 +179,7 @@ fn address_entry<'a>(
         (
             0,
             AddressBlockTransfers {
-                balance: Amount::zero(),
+                balance: 0,
                 received: 0,
                 created: Vec::new(),
                 spent: Vec::new(),
@@ -194,12 +195,12 @@ fn address_entry<'a>(
 
 impl AddressBlockTransfers {
     /// Returns the change this block makes to the address balance.
-    pub(crate) fn balance(&self) -> Amount<NegativeAllowed> {
+    pub(crate) fn balance(&self) -> i128 {
         self.balance
     }
 
     /// Returns the total value of the outputs this block creates for the address.
-    pub(crate) fn received(&self) -> u64 {
+    pub(crate) fn received(&self) -> u128 {
         self.received
     }
 

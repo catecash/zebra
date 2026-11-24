@@ -24,7 +24,7 @@ use zcash_transparent::{
 use crate::{
     amount::{Amount, NonNegative},
     block::Height,
-    parameters::{Network, NetworkKind},
+    parameters::{ConsensusBranchId, Network, NetworkKind},
     transaction::{compat, Transaction},
     transparent, BoxError,
 };
@@ -73,6 +73,9 @@ impl Transaction {
         inputs: &[(transparent::OutPoint, transparent::Output)],
         outputs: &[(transparent::Address, Amount<NonNegative>)],
     ) -> Result<Self, BoxError> {
+        let branch_id = ConsensusBranchId::current(network, target_height)
+            .and_then(|id| BranchId::try_from(id).ok())
+            .ok_or("target height has no supported consensus branch ID")?;
         let target_height = compat::height_to_block_height(target_height);
 
         // The change output counts towards the fee, so it is always added below.
@@ -129,7 +132,6 @@ impl Transaction {
             .build()
             .ok_or("transaction has no transparent inputs or outputs")?;
 
-        let branch_id = BranchId::for_height(network, target_height);
         let version = TxVersion::suggested_for_branch(branch_id);
         let expiry_height = target_height + default_tx_expiry_delta(branch_id);
 

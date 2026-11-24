@@ -21,7 +21,7 @@ use zebra_chain::{
     subtree::NoteCommitmentSubtreeIndex,
     transaction::{self, UnminedTx},
     transparent,
-    value_balance::{ValueBalance, ValueBalanceError},
+    value_balance::{network::NetworkChainValuePools, ValueBalance, ValueBalanceError},
 };
 
 /// Allow *only* these unused imports, so that rustdoc link resolution
@@ -536,14 +536,14 @@ impl ContextuallyVerifiedBlock {
         spent_outputs: HashMap<transparent::OutPoint, transparent::OrderedUtxo>,
         deferred_pool_balance_change: DeferredPoolBalanceChange,
         network: &Network,
-        previous_value_pools: ValueBalance<NonNegative>,
+        previous_value_pools: impl Into<NetworkChainValuePools>,
     ) -> Result<Self, ValueBalanceError> {
         Self::with_block_spent_utxos_and_fees(
             semantically_verified,
             spent_outputs,
             deferred_pool_balance_change,
             network,
-            previous_value_pools,
+            previous_value_pools.into(),
         )
         .map(|(contextually_verified, _transaction_fees)| contextually_verified)
     }
@@ -555,8 +555,9 @@ impl ContextuallyVerifiedBlock {
         spent_outputs: HashMap<transparent::OutPoint, transparent::OrderedUtxo>,
         deferred_pool_balance_change: DeferredPoolBalanceChange,
         network: &Network,
-        previous_value_pools: ValueBalance<NonNegative>,
+        previous_value_pools: impl Into<NetworkChainValuePools>,
     ) -> Result<(Self, Option<Amount<NonNegative>>), ValueBalanceError> {
+        let previous_value_pools = previous_value_pools.into();
         let SemanticallyVerifiedBlock {
             block,
             hash,
@@ -566,12 +567,13 @@ impl ContextuallyVerifiedBlock {
             received_time,
         } = semantically_verified;
 
-        let (chain_value_pool_change, transaction_fees) = block.chain_value_pool_change_and_fees(
-            &spent_outputs,
-            deferred_pool_balance_change,
-            network,
-            previous_value_pools,
-        )?;
+        let (chain_value_pool_change, transaction_fees) = block
+            .chain_value_pool_change_and_fees_with_parent_nsm(
+                &spent_outputs,
+                deferred_pool_balance_change,
+                network,
+                previous_value_pools.nsm_amount(),
+            )?;
 
         Ok((
             Self {

@@ -17,8 +17,13 @@ use std::{
 };
 
 use zebra_chain::{
-    amount::NonNegative, block::Height, block_info::BlockInfo, history_tree::HistoryTree,
-    serialization::ZcashSerialize as _, transparent, value_balance::ValueBalance,
+    amount::NonNegative,
+    block::Height,
+    block_info::BlockInfo,
+    history_tree::HistoryTree,
+    serialization::ZcashSerialize as _,
+    transparent,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use crate::{
@@ -60,7 +65,7 @@ pub const CHAIN_VALUE_POOLS: &str = "tip_chain_value_pool";
 ///
 /// This constant should be used so the compiler can detect incorrectly typed accesses to the
 /// column family.
-pub type ChainValuePoolsCf<'cf> = TypedColumnFamily<'cf, (), ValueBalance<NonNegative>>;
+pub type ChainValuePoolsCf<'cf> = TypedColumnFamily<'cf, (), NetworkChainValuePools>;
 
 /// The name of the block info column family.
 ///
@@ -172,12 +177,18 @@ impl ZebraDb {
     // Value pool methods
 
     /// Returns the stored `ValueBalance` for the best chain at the finalized tip height.
-    pub fn finalized_value_pool(&self) -> ValueBalance<NonNegative> {
+    pub fn finalized_value_pool(&self) -> NetworkChainValuePools {
         let chain_value_pools_cf = self.chain_value_pools_cf();
 
-        chain_value_pools_cf
+        let pools = chain_value_pools_cf
             .zs_get(&())
-            .unwrap_or_else(ValueBalance::zero)
+            .unwrap_or_else(|| NetworkChainValuePools::zero(&self.db.network()));
+        assert_eq!(
+            matches!(pools, NetworkChainValuePools::Catecash(_)),
+            self.db.network().is_catecash(),
+            "stored chain pools must match the configured network"
+        );
+        pools
     }
 
     /// Returns the stored `BlockInfo` for the given block.
@@ -186,7 +197,18 @@ impl ZebraDb {
 
         let block_info_cf = self.block_info_cf();
 
-        block_info_cf.zs_get(&height)
+        let info = block_info_cf.zs_get(&height);
+        if let Some(info) = &info {
+            assert_eq!(
+                matches!(info.value_pools(), NetworkChainValuePools::Catecash(_)),
+                self.db.network().is_catecash(),
+                "stored block pools must match the configured network"
+            );
+            info.value_pools()
+                .validate_at_height(height)
+                .expect("stored block pools must obey the height subsidy bound");
+        }
+        info
     }
 }
 
@@ -251,7 +273,7 @@ impl DiskWriteBatch {
         db: &ZebraDb,
         finalized: &FinalizedBlock,
         utxos_spent_by_block: HashMap<transparent::OutPoint, transparent::Utxo>,
-        value_pool: ValueBalance<NonNegative>,
+        value_pool: NetworkChainValuePools,
     ) -> Result<(), ValidateContextError> {
         let calculate_value_change_error =
             |value_balance_error| ValidateContextError::CalculateBlockChainValueChange {
@@ -264,16 +286,16 @@ impl DiskWriteBatch {
 
         let block_value_pool_change = finalized
             .block
-            .chain_value_pool_change(
+            .chain_value_pool_change_with_parent_nsm(
                 &utxos_spent_by_block,
                 finalized.deferred_pool_balance_change,
                 &db.network(),
-                value_pool,
+                value_pool.nsm_amount(),
             )
             .map_err(calculate_value_change_error)?;
 
         let new_value_pool = value_pool
-            .add_chain_value_pool_change(block_value_pool_change)
+            .apply_change_at_height(block_value_pool_change, finalized.height)
             .map_err(|value_balance_error| ValidateContextError::AddValuePool {
                 value_balance_error,
                 chain_value_pools: Box::new(value_pool),

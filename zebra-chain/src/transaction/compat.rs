@@ -30,11 +30,10 @@ pub fn txin_to_input(
         let script_bytes = txin.script_sig().0 .0.clone();
         let (height, data) = if script_bytes.as_slice()
             == crate::transparent::serialize::GENESIS_COINBASE_SCRIPT_SIG
+            || script_bytes.as_slice()
+                == crate::transparent::serialize::CATECASH_GENESIS_COINBASE_SCRIPT_SIG
         {
-            (
-                block::Height::MIN,
-                crate::transparent::serialize::GENESIS_COINBASE_SCRIPT_SIG.to_vec(),
-            )
+            (block::Height::MIN, script_bytes)
         } else {
             crate::transparent::serialize::parse_coinbase_height(&script_bytes)?
         };

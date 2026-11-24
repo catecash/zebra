@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     block::{Block, Height},
     parameters::Network,
-    serialization::{SerializationError, ZcashDeserialize, ZcashDeserializeInto},
+    serialization::{SerializationError, ZcashDeserialize, ZcashDeserializeInto, ZcashSerialize},
     transaction,
     transparent::Input,
 };
@@ -36,6 +36,69 @@ fn build_coinbase_wire(script_sig: &[u8]) -> Vec<u8> {
 /// upstream encoder used by `zcash_transparent::bundle::TxIn::coinbase`.
 fn canonical_height_prefix(height: Height) -> Vec<u8> {
     pattern::push_num(i64::from(height.0)).to_bytes()
+}
+
+#[test]
+fn catecash_genesis_coinbase_message_is_exact_and_parses_at_height_zero() {
+    use crate::transparent::serialize::{
+        CATECASH_GENESIS_COINBASE_SCRIPT_SIG, CATECASH_GENESIS_MESSAGE,
+    };
+
+    let _init_guard = zebra_test::init();
+    assert_eq!(
+        CATECASH_GENESIS_MESSAGE,
+        b"I am the fortunate one. The High G, The One above."
+    );
+    assert_eq!(
+        &CATECASH_GENESIS_COINBASE_SCRIPT_SIG[8..],
+        CATECASH_GENESIS_MESSAGE
+    );
+    assert_eq!(CATECASH_GENESIS_COINBASE_SCRIPT_SIG[7], 50);
+
+    let wire = build_coinbase_wire(&CATECASH_GENESIS_COINBASE_SCRIPT_SIG);
+    let input = Input::zcash_deserialize(&wire[..]).expect("Catecash genesis coinbase parses");
+    assert!(matches!(
+        input,
+        Input::Coinbase {
+            height: Height::MIN,
+            ..
+        }
+    ));
+    assert_eq!(input.zcash_serialize_to_vec().unwrap(), wire);
+
+    let mut altered = CATECASH_GENESIS_COINBASE_SCRIPT_SIG;
+    altered[8] = b'i';
+    let altered = Input::zcash_deserialize(&build_coinbase_wire(&altered)[..]).unwrap();
+    assert!(matches!(altered, Input::Coinbase { height, .. } if height != Height::MIN));
+}
+
+#[test]
+fn catecash_genesis_coinbase_transaction_has_no_spendable_value() {
+    use crate::transparent::serialize::CATECASH_GENESIS_COINBASE_SCRIPT_SIG;
+
+    let _init_guard = zebra_test::init();
+    let mut wire = Vec::new();
+    wire.extend_from_slice(&1u32.to_le_bytes()); // Version 1, as in Zcash genesis.
+    wire.push(1); // One coinbase input.
+    wire.extend_from_slice(&build_coinbase_wire(&CATECASH_GENESIS_COINBASE_SCRIPT_SIG));
+    wire.push(1); // One zero-value output.
+    wire.extend_from_slice(&0u64.to_le_bytes());
+    wire.extend_from_slice(&[1, 0x6a]); // OP_RETURN: no payment address.
+    wire.extend_from_slice(&0u32.to_le_bytes()); // Lock time.
+
+    let transaction: transaction::Transaction = wire
+        .as_slice()
+        .zcash_deserialize_into()
+        .expect("Catecash genesis coinbase parses on the production path");
+    assert_eq!(
+        transaction.inputs()[0].coinbase_script().unwrap(),
+        CATECASH_GENESIS_COINBASE_SCRIPT_SIG
+    );
+    assert!(transaction
+        .outputs()
+        .iter()
+        .all(|output| output.value.is_zero()));
+    assert_eq!(transaction.zcash_serialize_to_vec().unwrap(), wire);
 }
 
 #[test]

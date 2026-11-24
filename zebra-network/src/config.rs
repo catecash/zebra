@@ -68,6 +68,7 @@ const DEFAULT_TESTNET_PEERS: [&str; 3] = [
     "seeder.testnet.zec.rocks:18233",
     "testnet.seeder.zfnd.org:18233",
 ];
+const CATECASH_DEVNET_SEED: &str = "devnet.catecash.com:34343";
 
 /// Configuration for networking code.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -271,6 +272,34 @@ impl Config {
                 .cloned()
                 .collect(),
             Network::Testnet(_params) => self.initial_testnet_peers.clone(),
+            Network::CatecashDevnet => {
+                let mut peers: IndexSet<String> = self
+                    .initial_testnet_peers
+                    .iter()
+                    .filter(|peer| !is_default_initial_peer(peer))
+                    .cloned()
+                    .collect();
+                if self
+                    .initial_testnet_peers
+                    .iter()
+                    .any(|peer| is_default_initial_peer(peer))
+                {
+                    peers.insert(CATECASH_DEVNET_SEED.to_string());
+                }
+                peers
+            }
+            Network::CatecashMainnet => self
+                .initial_testnet_peers
+                .iter()
+                .filter(|peer| !is_default_initial_peer(peer))
+                .cloned()
+                .collect(),
+            Network::CatecashTestnet => self
+                .initial_testnet_peers
+                .iter()
+                .filter(|peer| !is_default_initial_peer(peer))
+                .cloned()
+                .collect(),
         }
     }
 
@@ -756,6 +785,7 @@ impl From<Config> for DConfig {
         }: Config,
     ) -> Self {
         let dnetwork = match network.kind() {
+            NetworkKind::CatecashDevnet => DNetwork::DefaultForKind(NetworkKind::CatecashDevnet),
             NetworkKind::Testnet => match network
                 .parameters()
                 .filter(|params| !params.is_default_testnet())
@@ -819,6 +849,30 @@ impl<'de> Deserialize<'de> for Config {
             .map(Network::new_configured_testnet)
             .map_err(de::Error::custom)?,
             (DNetwork::DefaultForKind(NetworkKind::Mainnet), _) => Network::Mainnet,
+            (DNetwork::DefaultForKind(NetworkKind::CatecashDevnet), Some(_)) => {
+                return Err(de::Error::custom(
+                    "CatecashDevnet consensus parameters are fixed; remove [network.testnet_parameters]",
+                ));
+            }
+            (DNetwork::DefaultForKind(NetworkKind::CatecashDevnet), None) => {
+                Network::CatecashDevnet
+            }
+            (DNetwork::DefaultForKind(NetworkKind::CatecashMainnet), Some(_)) => {
+                return Err(de::Error::custom(
+                    "CatecashMainnet consensus parameters are fixed; remove [network.testnet_parameters]",
+                ));
+            }
+            (DNetwork::DefaultForKind(NetworkKind::CatecashMainnet), None) => {
+                Network::CatecashMainnet
+            }
+            (DNetwork::DefaultForKind(NetworkKind::CatecashTestnet), Some(_)) => {
+                return Err(de::Error::custom(
+                    "CatecashTestnet consensus parameters are fixed; remove [network.testnet_parameters]",
+                ));
+            }
+            (DNetwork::DefaultForKind(NetworkKind::CatecashTestnet), None) => {
+                Network::CatecashTestnet
+            }
             (DNetwork::DefaultForKind(NetworkKind::Testnet), Some(params)) => {
                 build_configured_testnet::<D>(params, &initial_testnet_peers)?
             }

@@ -899,6 +899,130 @@ fn config_load_defaults() {
 }
 
 #[test]
+fn catecash_devnet_profile_is_p2p_isolated() {
+    use zebra_chain::{
+        block::{genesis::catecash_devnet_genesis_block, Height},
+        parameters::{constants::magics, ConsensusBranchId, Magic, Network, NetworkUpgrade},
+    };
+
+    let _env = EnvGuard::new();
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let config_path = temp_dir.path().join("catecash-devnet.toml");
+    fs::write(
+        &config_path,
+        include_str!("../../../configs/catecash-devnet.toml"),
+    )
+    .expect("write Catecash devnet profile");
+
+    let config = ZebradConfig::load(Some(config_path)).expect("load Catecash devnet profile");
+    let network = &config.network.network;
+
+    assert_eq!(network.to_string(), "CatecashDevnet");
+    assert!(network.is_catecash_devnet());
+    assert!(matches!(network, Network::CatecashDevnet));
+    assert_eq!(network.magic(), Magic([111, 131, 5, 188]));
+    assert_ne!(network.magic(), magics::MAINNET);
+    assert_ne!(network.magic(), magics::TESTNET);
+    assert_ne!(network.magic(), magics::REGTEST);
+    assert_eq!(config.network.listen_addr.to_string(), "127.0.0.1:34343");
+    assert!(config.network.initial_testnet_peers.is_empty());
+    assert!(!config.network.cache_dir.is_enabled());
+    assert_eq!(
+        config.rpc.listen_addr.unwrap().to_string(),
+        "127.0.0.1:34342"
+    );
+    assert_eq!(network.activation_list().len(), 2);
+    assert_eq!(
+        NetworkUpgrade::current(network, Height(0)),
+        NetworkUpgrade::Genesis
+    );
+    for height in [1, 2, 1_000_000, 4_000_000] {
+        assert_eq!(
+            NetworkUpgrade::current(network, Height(height)),
+            NetworkUpgrade::Nu7
+        );
+        assert_eq!(
+            NetworkUpgrade::target_spacing_for_height(network, Height(height)).num_seconds(),
+            25
+        );
+        assert_eq!(
+            ConsensusBranchId::current(network, Height(height)),
+            Some(ConsensusBranchId::CATECASH_LAUNCH)
+        );
+        assert!(network.orchard_canonical_proof_size_rule_active(Height(height)));
+        assert!(!network.is_orchard_temporarily_disabled(Height(height)));
+    }
+    for upgrade in [
+        NetworkUpgrade::Sapling,
+        NetworkUpgrade::Nu5,
+        NetworkUpgrade::Nu6_3,
+        NetworkUpgrade::Nu7,
+    ] {
+        assert_eq!(upgrade.activation_height(network), Some(Height(1)));
+    }
+    assert!(!network.is_orchard_temporarily_disabled(Height(4_048_500)));
+    assert!(network.parameters().is_none());
+    assert!(network.all_funding_streams().is_empty());
+    assert!(network.lockbox_disbursements(Height(1)).is_empty());
+    assert_ne!(
+        network.directory_name(),
+        Network::new_default_testnet().directory_name()
+    );
+    assert_eq!(
+        network.genesis_hash(),
+        catecash_devnet_genesis_block().hash()
+    );
+    assert_eq!(
+        network.checkpoint_list().hash(Height::MIN),
+        Some(network.genesis_hash())
+    );
+    assert_ne!(
+        network.genesis_hash(),
+        Network::new_default_testnet().genesis_hash()
+    );
+}
+
+#[test]
+fn catecash_mainnet_candidate_profile_is_loopback_only() {
+    use zebra_chain::{
+        block::{genesis::catecash_mainnet_genesis_block, Height},
+        parameters::{Network, NetworkUpgrade},
+    };
+
+    let _env = EnvGuard::new();
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let config_path = temp_dir.path().join("catecash-mainnet-candidate.toml");
+    fs::write(
+        &config_path,
+        include_str!("../../../configs/catecash-mainnet-candidate.toml"),
+    )
+    .expect("write Catecash mainnet candidate profile");
+
+    let config = ZebradConfig::load(Some(config_path)).expect("load candidate profile");
+    let network = &config.network.network;
+    assert!(matches!(network, Network::CatecashMainnet));
+    assert_eq!(config.network.listen_addr.to_string(), "127.0.0.1:34333");
+    assert!(config.network.initial_mainnet_peers.is_empty());
+    assert!(!config.network.cache_dir.is_enabled());
+    assert_eq!(
+        config.rpc.listen_addr.unwrap().to_string(),
+        "127.0.0.1:34332"
+    );
+    assert_eq!(
+        network.genesis_hash(),
+        catecash_mainnet_genesis_block().hash()
+    );
+    assert_eq!(
+        network.checkpoint_list().hash(Height::MIN),
+        Some(network.genesis_hash())
+    );
+    assert_eq!(
+        NetworkUpgrade::current(network, Height(1)),
+        NetworkUpgrade::Nu7
+    );
+}
+
+#[test]
 fn config_load_from_file() {
     let _env = EnvGuard::new();
 

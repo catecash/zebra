@@ -1,0 +1,17 @@
+# Loopback-only Catecash testnet version 1 private-rehearsal peer.
+
+[network]
+network = "CatecashTestnet"
+listen_addr = "127.0.0.1:34354"
+initial_mainnet_peers = []
+initial_testnet_peers = []
+peerset_initial_target_size = 1
+max_connections_per_ip = 2
+cache_dir = false
+
+[state]
+cache_dir = "target/catecash-testnet-peer-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34355"
+enable_cookie_auth = false

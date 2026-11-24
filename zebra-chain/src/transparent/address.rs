@@ -180,6 +180,21 @@ impl std::str::FromStr for Address {
                 validating_key_hash: hash_bytes,
             }),
 
+            zcash_address::constants::catecash_devnet::HRP_TEX_ADDRESS => Ok(Address::Tex {
+                network_kind: NetworkKind::CatecashDevnet,
+                validating_key_hash: hash_bytes,
+            }),
+
+            zcash_address::constants::catecash_mainnet::HRP_TEX_ADDRESS => Ok(Address::Tex {
+                network_kind: NetworkKind::CatecashMainnet,
+                validating_key_hash: hash_bytes,
+            }),
+
+            zcash_address::constants::catecash_testnet::HRP_TEX_ADDRESS => Ok(Address::Tex {
+                network_kind: NetworkKind::CatecashTestnet,
+                validating_key_hash: hash_bytes,
+            }),
+
             _ => Err(SerializationError::Parse("unknown Bech32 HRP")),
         }
     }
@@ -236,6 +251,24 @@ impl ZcashDeserialize for Address {
                     script_hash: hash_bytes,
                 })
             }
+            zcash_address::constants::catecash_devnet::B58_SCRIPT_ADDRESS_PREFIX => {
+                Ok(Address::PayToScriptHash {
+                    network_kind: NetworkKind::CatecashDevnet,
+                    script_hash: hash_bytes,
+                })
+            }
+            zcash_address::constants::catecash_mainnet::B58_SCRIPT_ADDRESS_PREFIX => {
+                Ok(Address::PayToScriptHash {
+                    network_kind: NetworkKind::CatecashMainnet,
+                    script_hash: hash_bytes,
+                })
+            }
+            zcash_address::constants::catecash_testnet::B58_SCRIPT_ADDRESS_PREFIX => {
+                Ok(Address::PayToScriptHash {
+                    network_kind: NetworkKind::CatecashTestnet,
+                    script_hash: hash_bytes,
+                })
+            }
             zcash_address::constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX => {
                 Ok(Address::PayToPublicKeyHash {
                     network_kind: NetworkKind::Mainnet,
@@ -245,6 +278,24 @@ impl ZcashDeserialize for Address {
             zcash_address::constants::testnet::B58_PUBKEY_ADDRESS_PREFIX => {
                 Ok(Address::PayToPublicKeyHash {
                     network_kind: NetworkKind::Testnet,
+                    pub_key_hash: hash_bytes,
+                })
+            }
+            zcash_address::constants::catecash_devnet::B58_PUBKEY_ADDRESS_PREFIX => {
+                Ok(Address::PayToPublicKeyHash {
+                    network_kind: NetworkKind::CatecashDevnet,
+                    pub_key_hash: hash_bytes,
+                })
+            }
+            zcash_address::constants::catecash_mainnet::B58_PUBKEY_ADDRESS_PREFIX => {
+                Ok(Address::PayToPublicKeyHash {
+                    network_kind: NetworkKind::CatecashMainnet,
+                    pub_key_hash: hash_bytes,
+                })
+            }
+            zcash_address::constants::catecash_testnet::B58_PUBKEY_ADDRESS_PREFIX => {
+                Ok(Address::PayToPublicKeyHash {
+                    network_kind: NetworkKind::CatecashTestnet,
                     pub_key_hash: hash_bytes,
                 })
             }

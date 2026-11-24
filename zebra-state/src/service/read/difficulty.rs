@@ -231,7 +231,7 @@ fn difficulty_time_and_history_tree(
     tip_hash: block::Hash,
     network: &Network,
     history_tree: Arc<HistoryTree>,
-    chain_value_pools: zebra_chain::value_balance::ValueBalance<zebra_chain::amount::NonNegative>,
+    chain_value_pools: impl Into<zebra_chain::value_balance::network::NetworkChainValuePools>,
     now: DateTime32,
 ) -> Result<GetBlockTemplateChainInfo, BoxError> {
     // > For each block other than the genesis block , nTime MUST be strictly greater than
@@ -290,7 +290,7 @@ fn difficulty_time_and_history_tree(
         cur_time,
         min_time,
         max_time,
-        chain_value_pools,
+        chain_value_pools: chain_value_pools.into(),
     };
 
     adjust_difficulty_and_time_for_testnet(&mut result, network, tip_height, relevant_data);

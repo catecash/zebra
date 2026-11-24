@@ -130,6 +130,12 @@ pub fn expected_zcashd_chain_name(network: &Network) -> &'static str {
         NetworkKind::Mainnet => "main",
         NetworkKind::Testnet => "test",
         NetworkKind::Regtest => "regtest",
+        NetworkKind::CatecashDevnet => {
+            unreachable!("Catecash devnet does not support zcashd compatibility")
+        }
+        NetworkKind::CatecashMainnet => {
+            unreachable!("Catecash mainnet does not support zcashd compatibility")
+        }
     }
 }
 

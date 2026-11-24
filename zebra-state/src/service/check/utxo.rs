@@ -8,7 +8,6 @@ use zebra_chain::{
 };
 
 use crate::{
-    constants::MIN_TRANSPARENT_COINBASE_MATURITY,
     service::{
         finalized_state::ZebraDb,
         non_finalized_state::{Chain, SpendingTransactionId},
@@ -79,7 +78,12 @@ pub fn transparent_spend(
             // We don't want to use UTXOs from invalid pending blocks,
             // so we check transparent coinbase maturity and shielding
             // using known valid UTXOs during non-finalized chain validation.
-            transparent_coinbase_spend(spend, spend_restriction, utxo.as_ref())?;
+            transparent_coinbase_spend(
+                spend,
+                spend_restriction,
+                utxo.as_ref(),
+                finalized_state.network().transparent_coinbase_maturity(),
+            )?;
 
             // We don't delete the UTXOs until the block is committed,
             // so we  need to check for duplicate spends within the same block.
@@ -192,10 +196,13 @@ fn transparent_spend_chain_order(
 /// > Founders’ Reward outputs and transparent funding stream outputs.
 ///
 /// <https://zips.z.cash/protocol/protocol.pdf#txnconsensus>
+///
+/// Catecash devnet supplies its own 240-block maturity through `maturity`.
 pub fn transparent_coinbase_spend(
     outpoint: transparent::OutPoint,
     spend_restriction: transparent::CoinbaseSpendRestriction,
     utxo: &transparent::Utxo,
+    maturity: u32,
 ) -> Result<(), ValidateContextError> {
     if !utxo.from_coinbase {
         return Ok(());
@@ -203,7 +210,7 @@ pub fn transparent_coinbase_spend(
 
     match spend_restriction {
         CheckCoinbaseMaturity { spend_height } => {
-            let min_spend_height = utxo.height + MIN_TRANSPARENT_COINBASE_MATURITY.into();
+            let min_spend_height = utxo.height + maturity.into();
             let min_spend_height =
                 min_spend_height.expect("valid UTXOs have coinbase heights far below Height::MAX");
             if spend_height >= min_spend_height {

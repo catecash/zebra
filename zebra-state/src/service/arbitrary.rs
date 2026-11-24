@@ -150,12 +150,20 @@ impl Strategy for PreparedChain {
 
             let (network, blocks) = ledger_strategy
                 .prop_flat_map(|ledger| {
+                    let maturity = ledger.network.transparent_coinbase_maturity();
                     (
                         Just(ledger.network.clone()),
                         Block::partial_chain_strategy(
                             ledger,
                             MAX_PARTIAL_CHAIN_BLOCKS,
-                            check::utxo::transparent_coinbase_spend,
+                            move |outpoint, restriction, utxo| {
+                                check::utxo::transparent_coinbase_spend(
+                                    outpoint,
+                                    restriction,
+                                    utxo,
+                                    maturity,
+                                )
+                            },
                             self.generate_valid_commitments,
                         ),
                     )

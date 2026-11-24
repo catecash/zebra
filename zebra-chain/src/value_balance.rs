@@ -16,6 +16,9 @@ mod arbitrary;
 #[cfg(test)]
 mod tests;
 
+pub mod wide;
+pub mod network;
+
 use ValueBalanceError::*;
 
 /// The number of bytes in a serialized [`ValueBalance`]: eight bytes per chain value pool.

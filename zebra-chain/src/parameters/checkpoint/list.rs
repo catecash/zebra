@@ -61,6 +61,13 @@ impl Network {
                 .expect("hard-coded hash parses"),
             // See `zebra_chain::parameters::network::testnet` for more details.
             Network::Testnet(params) => params.genesis_hash(),
+            Network::CatecashDevnet => crate::parameters::catecash::genesis_hash(),
+            Network::CatecashMainnet => {
+                crate::parameters::network::catecash_mainnet::genesis_hash()
+            }
+            Network::CatecashTestnet => {
+                crate::parameters::network::catecash_testnet::genesis_hash()
+            }
         }
     }
     /// Returns the hard-coded checkpoint list for `network`.
@@ -68,6 +75,13 @@ impl Network {
         match self {
             Network::Mainnet => MAINNET_CHECKPOINT_LIST.clone(),
             Network::Testnet(params) => params.checkpoints(),
+            Network::CatecashDevnet => crate::parameters::catecash::checkpoint_list(),
+            Network::CatecashMainnet => {
+                crate::parameters::network::catecash_mainnet::checkpoint_list()
+            }
+            Network::CatecashTestnet => {
+                crate::parameters::network::catecash_testnet::checkpoint_list()
+            }
         }
     }
 }

@@ -23,7 +23,10 @@ mod transaction;
 pub mod arbitrary;
 
 pub use genesis::*;
-pub use network::{magic::Magic, subsidy, testnet, Network, NetworkKind};
+pub use network::{
+    catecash, catecash_mainnet, catecash_testnet, magic::Magic, subsidy, testnet, Network,
+    NetworkKind,
+};
 pub use network_upgrade::*;
 pub use transaction::*;
 

@@ -32,7 +32,7 @@ use super::{
     Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetSubtreeRootsArg,
     LightdInfo, PingResponse, RawTransaction, SendResponse, ShieldedProtocol, SubtreeRoot,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    TransparentAddressBlockFilter, TreeState, TxFilter, WideBalance,
 };
 
 /// The maximum number of messages that can be queued to be streamed to a client.
@@ -275,9 +275,10 @@ where
         &self,
         request: Request<AddressList>,
     ) -> Result<Response<Balance>, Status> {
+        let catecash = self.network.is_catecash();
         let addresses = request.into_inner().addresses;
 
-        address_balance(&self.rpc, addresses)
+        address_balance(&self.rpc, addresses, catecash)
             .await
             .map(Response::new)
     }
@@ -286,9 +287,10 @@ where
         &self,
         request: Request<Streaming<Address>>,
     ) -> Result<Response<Balance>, Status> {
+        let catecash = self.network.is_catecash();
         let addresses = collect_streamed_addresses(request.into_inner()).await?;
 
-        address_balance(&self.rpc, addresses)
+        address_balance(&self.rpc, addresses, catecash)
             .await
             .map(Response::new)
     }
@@ -936,6 +938,7 @@ fn check_address_count(addresses: &[String]) -> Result<(), Status> {
 async fn address_balance<Rpc: RpcMethods>(
     rpc: &Rpc,
     addresses: Vec<String>,
+    catecash: bool,
 ) -> Result<Balance, Status> {
     check_address_count(&addresses)?;
 
@@ -944,9 +947,26 @@ async fn address_balance<Rpc: RpcMethods>(
         .await
         .map_err(rpc_arg_error_to_status)?;
 
+    let total = balance
+        .balance()
+        .as_u128()
+        .ok_or_else(|| Status::data_loss("address balance is not an exact nonnegative integer"))?;
+    encode_balance(total, catecash)
+}
+
+fn encode_balance(total: u128, catecash: bool) -> Result<Balance, Status> {
+    let zcash_value = if catecash {
+        0
+    } else {
+        i64::try_from(total)
+            .map_err(|_| Status::out_of_range("address balance exceeds the Zcash wire range"))?
+    };
     Ok(Balance {
-        // Cast is safe: the total ZEC supply in zatoshis fits in an `i64`.
-        value_zat: balance.balance() as i64,
+        value_zat: zcash_value,
+        value_zat_wide: catecash.then_some(WideBalance {
+            low: total as u64,
+            high: (total >> 64) as u64,
+        }),
     })
 }
 
@@ -1175,9 +1195,39 @@ fn rpc_arg_error_to_status(error: jsonrpsee_types::ErrorObjectOwned) -> Status {
 mod tests {
     use super::*;
     use futures::StreamExt;
+    use prost::Message;
     use std::sync::Arc;
     use tonic::Code;
     use zebra_chain::serialization::BytesInDisplayOrder;
+
+    #[test]
+    fn catecash_balance_round_trips_all_128_bits() {
+        let zero = encode_balance(0, true).unwrap();
+        assert_eq!(zero.value_zat_wide.unwrap().low, 0);
+        let zcash = encode_balance(7, false).unwrap();
+        assert_eq!(zcash.value_zat, 7);
+        assert!(zcash.value_zat_wide.is_none());
+        assert_eq!(encode_balance(7, true).unwrap().value_zat, 0);
+        let total = (i64::MAX as u128) + 1;
+        assert_eq!(
+            encode_balance(total, false).unwrap_err().code(),
+            Code::OutOfRange
+        );
+        let encoded = encode_balance(total, true).unwrap();
+        let encoded = Balance::decode(encoded.encode_to_vec().as_slice()).unwrap();
+        let wide = encoded.value_zat_wide.unwrap();
+        assert_eq!(encoded.value_zat, 0);
+        assert_eq!((u128::from(wide.high) << 64) | u128::from(wide.low), total);
+
+        let largest = encode_balance(u128::MAX, true)
+            .unwrap()
+            .value_zat_wide
+            .unwrap();
+        assert_eq!(
+            (u128::from(largest.high) << 64) | u128::from(largest.low),
+            u128::MAX
+        );
+    }
 
     /// A streamed address list must be validated entry by entry, so an invalid
     /// address ends the stream instead of being buffered until it closes.

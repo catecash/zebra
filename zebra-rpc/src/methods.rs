@@ -1469,7 +1469,7 @@ where
             // but zcashd defines them based on ZIPs.
             //
             // All the network upgrades with a consensus branch ID are the same in Zebra and zcashd.
-            if let Some(branch_id) = network_upgrade.branch_id() {
+            if let Some(branch_id) = ConsensusBranchId::current(network, activation_height) {
                 // zcashd's RPC seems to ignore Disabled network upgrades, so Zebra does too.
                 let status = if tip_height >= activation_height {
                     NetworkUpgradeStatus::Active
@@ -1491,13 +1491,11 @@ where
             (tip_height + 1).expect("valid chain tips are a lot less than Height::MAX");
         let consensus = TipConsensusBranch {
             chain_tip: ConsensusBranchIdHex(
-                NetworkUpgrade::current(network, tip_height)
-                    .branch_id()
+                ConsensusBranchId::current(network, tip_height)
                     .unwrap_or(ConsensusBranchId::RPC_MISSING_ID),
             ),
             next_block: ConsensusBranchIdHex(
-                NetworkUpgrade::current(network, next_block_height)
-                    .branch_id()
+                ConsensusBranchId::current(network, next_block_height)
                     .unwrap_or(ConsensusBranchId::RPC_MISSING_ID),
             ),
         };
@@ -1544,9 +1542,13 @@ where
 
         match response {
             zebra_state::ReadResponse::AddressBalance { balance, received } => {
+                let exact_strings = self.network.is_catecash();
                 Ok(GetAddressBalanceResponse {
-                    balance: u64::from(balance),
-                    received,
+                    balance: RpcAddressAmount::from_total(
+                        balance.try_into().map_misc_error()?,
+                        exact_strings,
+                    ),
+                    received: RpcAddressAmount::from_total(received, exact_strings),
                 })
             }
             _ => unreachable!("Unexpected response from state service: {response:?}"),
@@ -1849,9 +1851,22 @@ where
             // balances can be missing if a reorg occurs between the two reads. In that case, the
             // change is not known, so the response does not include it.
             let delta = block_info.as_ref().and_then(|d| {
-                let value_pools = d.value_pools().constrain::<NegativeAllowed>().ok()?;
+                let zebra_chain::value_balance::network::NetworkChainValuePools::Zcash(pools) =
+                    d.value_pools()
+                else {
+                    return None;
+                };
+                let value_pools = pools.constrain::<NegativeAllowed>().ok()?;
                 let prev_value_pools = match prev_block_info {
-                    Some(prev) => prev.value_pools().constrain::<NegativeAllowed>().ok()?,
+                    Some(prev) => {
+                        let zebra_chain::value_balance::network::NetworkChainValuePools::Zcash(
+                            prev_pools,
+                        ) = prev.value_pools()
+                        else {
+                            return None;
+                        };
+                        prev_pools.constrain::<NegativeAllowed>().ok()?
+                    }
                     None if previous_block_hash == GENESIS_PREVIOUS_BLOCK_HASH => {
                         ValueBalance::<NegativeAllowed>::zero()
                     }
@@ -3322,11 +3337,13 @@ where
             .parse::<ZcashAddress>()
             .ok()
             .and_then(|address| address.convert::<primitives::Address>().ok())
-            // zcashd decodes against the active chain params, so a wrong-network address is
-            // just "invalid". Testnet and Regtest share an encoding; only Mainnet differs.
+            // Testnet and Regtest share transparent encodings. Catecash has its own.
             .filter(|address| {
-                (address.network() == NetworkKind::Mainnet)
-                    == (self.network.kind() == NetworkKind::Mainnet)
+                let expected_kind = match self.network.kind() {
+                    NetworkKind::Regtest => NetworkKind::Testnet,
+                    kind => kind,
+                };
+                address.network() == expected_kind
             })
             .ok_or("Invalid address")
             .map_error(server::error::LegacyCode::InvalidAddressOrKey)?;
@@ -3396,10 +3413,10 @@ where
                 )?
                 .value_pools();
 
-            zebra_chain::parameters::subsidy::block_subsidy_with_parent_pools(
+            zebra_chain::parameters::subsidy::block_subsidy_with_parent_nsm_value_balance(
                 height,
                 &net,
-                parent_chain_value_pools,
+                parent_chain_value_pools.nsm_amount(),
             )
             .map_misc_error()?
         } else {
@@ -3475,6 +3492,11 @@ where
 
         let (network, .., unified_address) = zcash_address::unified::Address::decode(&address)
             .map_err(|error| ErrorObject::owned(0, error.to_string(), None::<()>))?;
+
+        if network != zcash_protocol::consensus::NetworkType::from(self.network.kind()) {
+            return Err("Address belongs to another network")
+                .map_error(server::error::LegacyCode::InvalidAddressOrKey);
+        }
 
         let mut p2pkh = None;
         let mut p2sh = None;
@@ -4116,7 +4138,9 @@ impl Default for GetBlockchainInfoResponse {
             blocks: Height(1),
             best_block_hash: block::Hash([0; 32]),
             estimated_height: Height(1),
-            chain_supply: GetBlockchainInfoBalance::chain_supply(Default::default()),
+            chain_supply: GetBlockchainInfoBalance::chain_supply(
+                ValueBalance::<NonNegative>::zero(),
+            ),
             value_pools: GetBlockchainInfoBalance::zero_pools(),
             nsm_value_balance: Some(GetBlockchainInfoBalance::nsm(
                 &Network::Mainnet,
@@ -4299,23 +4323,71 @@ impl GetAddressBalanceRequest {
 
 /// The transparent balance of a set of addresses.
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    Eq,
-    PartialEq,
-    Hash,
-    serde::Serialize,
-    serde::Deserialize,
-    Getters,
-    new,
+    Clone, Debug, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, Getters, new,
 )]
 pub struct GetAddressBalanceResponse {
     /// The total transparent balance.
-    balance: u64,
+    balance: RpcAddressAmount,
     /// The total received balance, including change.
-    pub received: u64,
+    pub received: RpcAddressAmount,
+}
+
+/// Exact address total. Catecash returns decimal strings to preserve base units
+/// through JSON; Zcash retains numbers while they fit its legacy response.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum RpcAddressAmount {
+    /// Legacy Zcash numeric total.
+    Number(u64),
+    /// Exact decimal base-unit total.
+    Decimal(String),
+}
+
+impl Default for RpcAddressAmount {
+    fn default() -> Self {
+        Self::Number(0)
+    }
+}
+
+impl RpcAddressAmount {
+    /// Select the exact wire representation for a network and total.
+    pub fn from_total(total: u128, exact_strings: bool) -> Self {
+        if exact_strings {
+            Self::Decimal(total.to_string())
+        } else if let Ok(value) = u64::try_from(total) {
+            Self::Number(value)
+        } else {
+            Self::Decimal(total.to_string())
+        }
+    }
+
+    /// Return a compact-block balance only when its signed wire width can represent it.
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            Self::Number(value) => i64::try_from(*value).ok(),
+            Self::Decimal(value) => value.parse().ok(),
+        }
+    }
+
+    /// Decode an exact nonnegative address total for wide protocol responses.
+    pub fn as_u128(&self) -> Option<u128> {
+        match self {
+            Self::Number(value) => Some(u128::from(*value)),
+            Self::Decimal(value) => value.parse().ok(),
+        }
+    }
+}
+
+impl From<u64> for RpcAddressAmount {
+    fn from(value: u64) -> Self {
+        Self::Number(value)
+    }
+}
+
+impl From<Amount<NonNegative>> for RpcAddressAmount {
+    fn from(value: Amount<NonNegative>) -> Self {
+        Self::Number(u64::from(value))
+    }
 }
 
 #[deprecated(note = "Use `GetAddressBalanceResponse` instead.")]

@@ -4,12 +4,54 @@ use derive_getters::Getters;
 use derive_new::new;
 use zebra_chain::{
     amount::{Amount, NegativeAllowed, NonNegative},
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use zec::Zec;
 
 use super::*;
+
+/// Exact base-unit RPC balance. Catecash totals are decimal strings so JSON clients
+/// cannot lose integer precision; Zcash retains its existing numeric response.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum RpcPoolAmount {
+    Zcash(Amount<NonNegative>),
+    Catecash(String),
+}
+
+impl RpcPoolAmount {
+    /// Return an exact aggregate in base units.
+    pub fn zatoshis(&self) -> i128 {
+        match self {
+            Self::Zcash(amount) => i128::from(amount.zatoshis()),
+            Self::Catecash(decimal) => decimal.parse().expect("validated Catecash totals fit i128"),
+        }
+    }
+}
+
+impl PartialEq<Amount<NonNegative>> for RpcPoolAmount {
+    fn eq(&self, other: &Amount<NonNegative>) -> bool {
+        matches!(self, Self::Zcash(value) if value == other)
+    }
+}
+
+impl PartialEq<Amount<NonNegative>> for &RpcPoolAmount {
+    fn eq(&self, other: &Amount<NonNegative>) -> bool {
+        *self == other
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum RpcCoinBalance {
+    Zcash(Zec<NonNegative>),
+    Catecash(String),
+}
+
+fn catecash_coins(zat: i128) -> String {
+    format!("{}.{:08}", zat / 100_000_000, zat % 100_000_000)
+}
 
 /// A value pool's balance in Zec and Zatoshis
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, Getters, new)]
@@ -19,11 +61,9 @@ pub struct GetBlockchainInfoBalance {
     #[serde(skip_serializing_if = "String::is_empty", default)]
     id: String,
     /// Total amount in the pool, in ZEC
-    #[getter(copy)]
-    chain_value: Zec<NonNegative>,
+    chain_value: RpcCoinBalance,
     /// Total amount in the pool, in zatoshis
-    #[getter(copy)]
-    chain_value_zat: Amount<NonNegative>,
+    chain_value_zat: RpcPoolAmount,
     /// Whether the value pool balance is being monitored.
     monitored: bool,
     /// Change to the amount in the pool produced by this block, in ZEC
@@ -39,7 +79,7 @@ pub struct GetBlockchainInfoBalance {
 impl GetBlockchainInfoBalance {
     /// Returns a list of [`GetBlockchainInfoBalance`]s converted from the default [`ValueBalance`].
     pub fn zero_pools() -> [Self; 6] {
-        Self::value_pools(Default::default(), None)
+        Self::value_pools(ValueBalance::<NonNegative>::zero(), None)
     }
 
     /// Creates a new [`GetBlockchainInfoBalance`] from a pool name and its value balance
@@ -51,11 +91,23 @@ impl GetBlockchainInfoBalance {
     ) -> Self {
         Self {
             id: id.to_string(),
-            chain_value: Zec::from(amount),
-            chain_value_zat: amount,
+            chain_value: RpcCoinBalance::Zcash(Zec::from(amount)),
+            chain_value_zat: RpcPoolAmount::Zcash(amount),
             monitored: amount.zatoshis() != 0,
             value_delta: delta_amount.map(Zec::from),
             value_delta_zat: delta_amount,
+        }
+    }
+
+    /// Construct an exact Catecash aggregate for a pool or chain supply.
+    pub fn new_catecash(id: &str, amount: i128, delta: Option<Amount<NegativeAllowed>>) -> Self {
+        Self {
+            id: id.to_string(),
+            chain_value: RpcCoinBalance::Catecash(catecash_coins(amount)),
+            chain_value_zat: RpcPoolAmount::Catecash(amount.to_string()),
+            monitored: amount != 0,
+            value_delta: delta.map(Zec::from),
+            value_delta_zat: delta,
         }
     }
 
@@ -121,9 +173,29 @@ impl GetBlockchainInfoBalance {
 
     /// Converts a [`ValueBalance`] to a list of [`GetBlockchainInfoBalance`]s.
     pub fn value_pools(
-        value_balance: ValueBalance<NonNegative>,
+        value_balance: impl Into<NetworkChainValuePools>,
         delta_balance: Option<ValueBalance<NegativeAllowed>>,
     ) -> [Self; 6] {
+        let value_balance = value_balance.into();
+        if let NetworkChainValuePools::Catecash(value) = value_balance {
+            let pools = value.pools();
+            let delta = delta_balance;
+            return [
+                Self::new_catecash(
+                    "transparent",
+                    pools[0],
+                    delta.map(|b| b.transparent_amount()),
+                ),
+                Self::new_catecash("sprout", pools[1], delta.map(|b| b.sprout_amount())),
+                Self::new_catecash("sapling", pools[2], delta.map(|b| b.sapling_amount())),
+                Self::new_catecash("orchard", pools[3], delta.map(|b| b.orchard_amount())),
+                Self::new_catecash("lockbox", pools[4], delta.map(|b| b.deferred_amount())),
+                Self::new_catecash("ironwood", pools[5], delta.map(|b| b.ironwood_amount())),
+            ];
+        }
+        let NetworkChainValuePools::Zcash(value_balance) = value_balance else {
+            unreachable!()
+        };
         [
             Self::transparent(
                 value_balance.transparent_amount(),
@@ -157,14 +229,31 @@ impl GetBlockchainInfoBalance {
     // Supply, so `chain_supply()` correctly falls as fees are burned. `nsm()` reports it.
 
     /// Converts a [`ValueBalance`] to a [`GetBlockchainInfoBalance`] representing the total chain supply.
-    pub fn chain_supply(value_balance: ValueBalance<NonNegative>) -> Self {
+    pub fn chain_supply(value_balance: impl Into<NetworkChainValuePools>) -> Self {
+        let value_balance = value_balance.into();
+        if let NetworkChainValuePools::Catecash(value) = value_balance {
+            return Self::new_catecash(
+                "",
+                value
+                    .issued_supply()
+                    .expect("validated pools have a representable supply"),
+                None,
+            );
+        }
+        let NetworkChainValuePools::Zcash(value_balance) = value_balance else {
+            unreachable!()
+        };
         Self::value_pools(value_balance, None)
             .into_iter()
             .reduce(|a, b| {
+                let (RpcPoolAmount::Zcash(a_value), RpcPoolAmount::Zcash(b_value)) =
+                    (a.chain_value_zat, b.chain_value_zat)
+                else {
+                    unreachable!()
+                };
                 GetBlockchainInfoBalance::new_internal(
                     "",
-                    (a.chain_value_zat + b.chain_value_zat)
-                        .expect("sum of value balances should not overflow"),
+                    (a_value + b_value).expect("sum of value balances should not overflow"),
                     None,
                 )
             })

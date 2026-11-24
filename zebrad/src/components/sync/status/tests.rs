@@ -153,6 +153,14 @@ fn empty_sync_lengths() {
     assert!(!status.is_close_to_tip());
 }
 
+#[test]
+fn catecash_devnet_waits_for_peer_sync() {
+    let (status, _recent_sync_lengths) =
+        SyncStatus::new_for_network(&zebra_chain::parameters::Network::CatecashDevnet);
+
+    assert!(!status.is_close_to_tip());
+}
+
 /// Test if sync lengths array with all zeroes is near tip.
 #[test]
 fn zero_sync_lengths() {

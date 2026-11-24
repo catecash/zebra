@@ -125,15 +125,17 @@ impl Block {
         &self,
         network: &Network,
     ) -> Result<(), error::BlockError> {
-        let block_nu =
-            NetworkUpgrade::current(network, self.coinbase_height().expect("a valid height"));
+        let height = self.coinbase_height().expect("a valid height");
+        let block_nu = NetworkUpgrade::current(network, height);
+        let expected_branch_id = crate::parameters::ConsensusBranchId::current(network, height);
 
-        if self
-            .transactions
-            .iter()
-            .filter_map(|trans| trans.as_ref().network_upgrade())
-            .any(|trans_nu| trans_nu != block_nu)
-        {
+        if self.transactions.iter().any(|trans| {
+            trans
+                .network_upgrade()
+                .is_some_and(|trans_nu| trans_nu != block_nu)
+                || (trans.version() >= 5
+                    && expected_branch_id != Some(u32::from(trans.consensus_branch_id()).into()))
+        }) {
             return Err(error::BlockError::WrongTransactionConsensusBranchId);
         }
 
@@ -293,6 +295,24 @@ impl Block {
         .map(|(change, _)| change)
     }
 
+    /// Return the pool change using only the parent's NSM reserve balance.
+    /// A wide parent pool record can call this without a narrowing conversion.
+    pub fn chain_value_pool_change_with_parent_nsm<U: AsRef<transparent::Utxo>>(
+        &self,
+        utxos: &HashMap<transparent::OutPoint, U>,
+        deferred_pool_balance_change: DeferredPoolBalanceChange,
+        network: &Network,
+        parent_nsm_value_balance: Amount<NonNegative>,
+    ) -> Result<ValueBalance<NegativeAllowed>, ValueBalanceError> {
+        self.chain_value_pool_change_and_fees_with_parent_nsm(
+            utxos,
+            deferred_pool_balance_change,
+            network,
+            parent_nsm_value_balance,
+        )
+        .map(|(change, _)| change)
+    }
+
     /// Returns the pool change and gross non-coinbase fees in a single transaction traversal.
     ///
     /// The arguments have the same requirements as [`Self::chain_value_pool_change`].
@@ -304,6 +324,24 @@ impl Block {
         deferred_pool_balance_change: DeferredPoolBalanceChange,
         network: &Network,
         previous_value_pools: ValueBalance<NonNegative>,
+    ) -> Result<(ValueBalance<NegativeAllowed>, Option<Amount<NonNegative>>), ValueBalanceError>
+    {
+        self.chain_value_pool_change_and_fees_with_parent_nsm(
+            utxos,
+            deferred_pool_balance_change,
+            network,
+            previous_value_pools.nsm_amount(),
+        )
+    }
+
+    /// Calculate a block's pool change using only the parent's NSM reserve.
+    /// This accepts a wide parent pool balance without narrowing its circulating pools.
+    pub fn chain_value_pool_change_and_fees_with_parent_nsm<U: AsRef<transparent::Utxo>>(
+        &self,
+        utxos: &HashMap<transparent::OutPoint, U>,
+        deferred_pool_balance_change: DeferredPoolBalanceChange,
+        network: &Network,
+        parent_nsm_value_balance: Amount<NonNegative>,
     ) -> Result<(ValueBalance<NegativeAllowed>, Option<Amount<NonNegative>>), ValueBalanceError>
     {
         // `Result<T, E>` implements `IntoIterator`, so a `flat_map(|t| t.value_balance(utxos))`
@@ -355,10 +393,10 @@ impl Block {
 
         if let Some(height) = height {
             chain_value_pool_change.set_nsm_amount(
-                subsidy::nsm_value_balance_change(
+                subsidy::nsm_value_balance_change_with_parent_nsm(
                     height,
                     network,
-                    previous_value_pools,
+                    parent_nsm_value_balance,
                     transaction_fees,
                 )
                 .map_err(ValueBalanceError::Nsm)?,

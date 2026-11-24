@@ -45,6 +45,9 @@ const DATABASE_FORMAT_VERSION: u64 = 29;
 /// - breaking changes with compatibility code in all supported Zebra versions.
 ///
 /// Version history:
+/// - 29.1.0: transparent address balances and lifetime received totals use checked 128-bit
+///   fields in new records. Readers still accept the 16- and 24-byte legacy records. Catecash
+///   chain pools and block info use separately tagged wide records; Zcash pool bytes are unchanged.
 /// - 29.0.0: the NU7 Network Sustainability Mechanism pool widens new `ValueBalance` writes from
 ///   48 to 56 bytes and `BlockInfo` writes from 52 to 60 bytes. Legacy records remain readable with
 ///   a zero NSM balance. The registered upgrade reuses compatible v28 state by moving its network
@@ -58,7 +61,7 @@ const DATABASE_FORMAT_VERSION: u64 = 29;
 ///   the current width). New CFs are created and the wider records are read in place when the
 ///   database is opened, so this is a major bump that is restorable from the previous major
 ///   database format version (no resync, no data migration).
-const DATABASE_FORMAT_MINOR_VERSION: u64 = 0;
+const DATABASE_FORMAT_MINOR_VERSION: u64 = 1;
 
 /// The database format patch version, incremented each time the on-disk database format has a
 /// significant format compatibility fix.

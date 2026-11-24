@@ -41,6 +41,9 @@ pub const MAX_POW_ADJUSTMENT_BLOCK_SPAN: usize = MAX_POW_AVERAGING_WINDOW + POW_
 ///
 /// `PoWAveragingWindow(height) + PoWMedianBlockSpan` in the Zcash specification.
 pub fn pow_adjustment_block_span(network: &Network, height: block::Height) -> usize {
+    if network.is_catecash() && height.0 >= 2 {
+        return 2;
+    }
     NetworkUpgrade::averaging_window_for_height(network, height) + POW_MEDIAN_BLOCK_SPAN
 }
 
@@ -212,6 +215,19 @@ impl AdjustedDifficulty {
     /// Implements `ThresholdBits` from the Zcash specification, and the Testnet
     /// minimum difficulty adjustment from ZIPs 205 and 208.
     pub fn expected_difficulty_threshold(&self) -> CompactDifficulty {
+        if self.network.is_catecash() && self.candidate_height.0 >= 2 {
+            // The existing height-one block was mined under Zebra's previous
+            // threshold rule. Activate DigiShield only from height two.
+            let times = self.relevant_times.as_slice();
+            let actual_timespan = (times[0] - times[1]).num_seconds();
+            return zebra_chain::work::digishield::next_target(
+                *self.relevant_difficulty_thresholds.first(),
+                actual_timespan,
+                self.network.target_difficulty_limit(),
+            )
+            .expect("previously verified Catecash target is valid");
+        }
+
         // Regtest uses fixed minimum difficulty with no retargeting, matching
         // zcashd's and Bitcoin's `fPowNoRetargeting`. This keeps every regtest
         // block at the powLimit, so a zcashd sidecar following a Zebra regtest

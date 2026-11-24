@@ -25,6 +25,48 @@ use crate::config::mining::{default_miner_address, MinerAddressType};
 
 use super::MinerParams;
 
+#[test]
+fn catecash_coinbase_uses_distinct_branch_id() -> anyhow::Result<()> {
+    use zebra_chain::parameters::ConsensusBranchId;
+
+    let network = Network::CatecashDevnet;
+    let miner_address = Address::decode(&network, "yPeC241BhV8S3oRB58xPobSFzJXkhYxwhKK")
+        .ok_or_else(|| anyhow!("default miner address must be valid"))?;
+    let template = TransactionTemplate::new_coinbase(
+        &network,
+        Height(1),
+        &MinerParams::from(miner_address),
+        Amount::zero(),
+    )?;
+    let transaction: Transaction = template.data().as_ref().zcash_deserialize_into()?;
+    assert_eq!(
+        u32::from(transaction.consensus_branch_id()),
+        u32::from(ConsensusBranchId::CATECASH_LAUNCH)
+    );
+    Ok(())
+}
+
+#[test]
+fn catecash_mainnet_candidate_coinbase_uses_its_own_branch_id() -> anyhow::Result<()> {
+    use zebra_chain::parameters::ConsensusBranchId;
+
+    let network = Network::CatecashMainnet;
+    let miner_address = Address::decode(&network, "CaGoTLXeYqiyzhQVT2kgy1TwpTqP2okCHZX")
+        .ok_or_else(|| anyhow!("candidate miner address must be valid"))?;
+    let template = TransactionTemplate::new_coinbase(
+        &network,
+        Height(1),
+        &MinerParams::from(miner_address),
+        Amount::zero(),
+    )?;
+    let transaction: Transaction = template.data().as_ref().zcash_deserialize_into()?;
+    assert_eq!(
+        u32::from(transaction.consensus_branch_id()),
+        u32::from(ConsensusBranchId::CATECASH_MAINNET_CANDIDATE)
+    );
+    Ok(())
+}
+
 /// PoW test networks can restart a stalled chain, but must still be synchronized.
 #[test]
 fn mining_requires_sync_but_only_mainnet_requires_a_recent_tip() {

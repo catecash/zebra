@@ -1,3 +1,22 @@
+<img src="docs/catecash/brand/logo.png" alt="Catecash gold cat coin logo" width="220">
+
+# Catecash (CATE)
+
+> **Catecash development fork:** This repository is based on Zebra. The
+> [Catecash identity and network plan](docs/catecash/identity.md) defines the
+> proposed CATE coin, a dedicated devnet, and a
+> [local-only mainnet candidate](docs/catecash/mainnet-candidate-rehearsal.md).
+> Both profiles have separate genesis blocks and network identifiers while
+> retaining Equihash and other inherited consensus rules. The candidate is not
+> a public release or a live Catecash chain. Run the
+> [Catecash devnet profile](configs/catecash-devnet.toml) or the
+> [mainnet candidate profile](configs/catecash-mainnet-candidate.toml) explicitly;
+> the upstream defaults below connect to Zcash.
+
+The [chain and privacy implementation contract](docs/catecash/chain-and-privacy.md)
+tracks the genesis, consensus, address, and shielded transaction work required
+before a Catecash blockchain can operate.
+
 ![Zebra logotype](https://zfnd.org/wp-content/uploads/2022/03/zebra-logotype.png)
 
 ---

@@ -24,7 +24,7 @@ use crate::{
 use zebra_chain::{
     amount::{Amount, NonNegative},
     parameters::subsidy::{self, CoinbaseTransactionError, SubsidyError},
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use crate::ContextuallyVerifiedBlock;
@@ -432,7 +432,7 @@ pub(crate) fn initial_contextual_validity(
 pub(crate) fn nsm_subsidy_is_valid(
     contextual: &ContextuallyVerifiedBlock,
     network: &Network,
-    parent_chain_value_pools: ValueBalance<NonNegative>,
+    parent_chain_value_pools: impl Into<NetworkChainValuePools>,
     block_miner_fees: Amount<NonNegative>,
 ) -> Result<(), ValidateContextError> {
     let invalid_subsidy =
@@ -442,10 +442,11 @@ pub(crate) fn nsm_subsidy_is_valid(
             block_hash: contextual.hash,
         };
 
-    let expected_block_subsidy = subsidy::block_subsidy_with_parent_pools(
+    let parent_chain_value_pools = parent_chain_value_pools.into();
+    let expected_block_subsidy = subsidy::block_subsidy_with_parent_nsm_value_balance(
         contextual.height,
         network,
-        parent_chain_value_pools,
+        parent_chain_value_pools.nsm_amount(),
     )
     .map_err(|error| invalid_subsidy(error.into()))?;
 

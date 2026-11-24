@@ -29,7 +29,7 @@ use zebra_chain::{
         Network,
     },
     primitives::zcash_history::BlockCommitmentTreeRoots,
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 use zebra_db::{
     chain::BLOCK_INFO,
@@ -547,12 +547,17 @@ impl FinalizedState {
 pub(crate) fn calculate_deferred_pool_balance_change(
     height: block::Height,
     network: &Network,
-    parent_chain_value_pools: ValueBalance<NonNegative>,
+    parent_chain_value_pools: impl Into<NetworkChainValuePools>,
 ) -> Result<DeferredPoolBalanceChange, SubsidyError> {
+    let parent_chain_value_pools = parent_chain_value_pools.into();
     zebra_chain::parameters::subsidy::funding_stream_values(
         height,
         network,
-        block_subsidy_with_parent_pools(height, network, parent_chain_value_pools)?,
+        zebra_chain::parameters::subsidy::block_subsidy_with_parent_nsm_value_balance(
+            height,
+            network,
+            parent_chain_value_pools.nsm_amount(),
+        )?,
     )?
     .remove(&zebra_chain::parameters::subsidy::FundingStreamReceiver::Deferred)
     .unwrap_or_default()

@@ -199,7 +199,7 @@ fn test_get_address_balance() -> Result<(), Box<dyn std::error::Error>> {
 }
 "#;
     let obj: GetAddressBalanceResponse = serde_json::from_str(json)?;
-    let new_obj = GetAddressBalanceResponse::new(obj.balance(), obj.received());
+    let new_obj = GetAddressBalanceResponse::new(obj.balance().clone(), obj.received.clone());
 
     assert_eq!(obj, new_obj);
 
@@ -275,8 +275,8 @@ fn test_get_block_1() -> Result<(), Box<dyn std::error::Error>> {
     let chain_supply = block.chain_supply().as_ref().map(|b| {
         GetBlockchainInfoBalance::new(
             b.id().clone(),
-            b.chain_value(),
-            b.chain_value_zat(),
+            b.chain_value().clone(),
+            b.chain_value_zat().clone(),
             b.monitored(),
             b.value_delta(),
             b.value_delta_zat(),

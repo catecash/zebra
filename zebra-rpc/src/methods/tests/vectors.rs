@@ -367,11 +367,23 @@ async fn get_block_data(
     };
 
     let delta = block_info.as_ref().and_then(|d| {
-        let value_pools = d.value_pools().constrain::<NegativeAllowed>().ok()?;
-        let prev_value_pools = prev_block_info
-            .map(|d| d.value_pools().constrain::<NegativeAllowed>())
-            .unwrap_or(Ok(ValueBalance::<NegativeAllowed>::zero()))
-            .ok()?;
+        let zebra_chain::value_balance::network::NetworkChainValuePools::Zcash(pools) =
+            d.value_pools()
+        else {
+            return None;
+        };
+        let value_pools = pools.constrain::<NegativeAllowed>().ok()?;
+        let prev_value_pools = match prev_block_info {
+            Some(d) => {
+                let zebra_chain::value_balance::network::NetworkChainValuePools::Zcash(pools) =
+                    d.value_pools()
+                else {
+                    return None;
+                };
+                pools.constrain::<NegativeAllowed>().ok()?
+            }
+            None => ValueBalance::<NegativeAllowed>::zero(),
+        };
         (value_pools - prev_value_pools).ok()
     });
 
@@ -3078,7 +3090,7 @@ async fn rpc_proposal_rejects_invalid_subsidy_before_verification() {
             let chain_info = GetBlockTemplateChainInfo {
                 tip_height,
                 tip_hash,
-                chain_value_pools,
+                chain_value_pools: chain_value_pools.into(),
                 expected_difficulty: template.bits,
                 cur_time: template.cur_time,
                 min_time: template.min_time,
@@ -3264,7 +3276,7 @@ async fn rpc_nsm_subsidy_and_same_height_templates_follow_parent_reserve() {
             let chain_info = GetBlockTemplateChainInfo {
                 tip_height: Height(999),
                 tip_hash: parent_hash,
-                chain_value_pools: pools,
+                chain_value_pools: pools.into(),
                 expected_difficulty: CompactDifficulty::from(ExpandedDifficulty::from(U256::one())),
                 cur_time: DateTime32::from(1654008617),
                 min_time: DateTime32::from(1654008606),

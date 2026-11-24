@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "status": "development-incomplete",
+  "network": "CatecashDevnet",
+  "ticker": "CATE",
+  "genesis_hash": "6b9c4d783359202111571c123309b2c0511d1bf9036f74dee4921f04e1f0a9cf",
+  "p2p_magic": "6f8305bc",
+  "p2p_port": 34343,
+  "rpc_port": 34342,
+  "first_mineable_height": 1,
+  "first_mineable_upgrade": "NU7",
+  "target_block_spacing_seconds": 25,
+  "difficulty_adjustment": "digishield-one-block-from-height-2",
+  "coinbase_maturity_blocks": 240,
+  "transaction_branch_id": "ea3beeb4",
+  "reject_genesis_hashes": {
+    "zcash_mainnet": "00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08",
+    "zcash_testnet": "05a60a92d99d85997cce3b87616c089f6124d7342af37106edc76126334a2c38",
+    "zcash_regtest": "029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327"
+  },
+  "reject_transaction_branch_ids": ["77190ad9"],
+  "address_encodings": {
+    "status": "provisional-devnet-only",
+    "coin_type": 3239,
+    "transparent_p2pkh_prefix": "1fc0",
+    "transparent_p2sh_prefix": "1fc1",
+    "transparent_p2pkh_hash_42_example": "yPeC241BhV8S3oRB58xPobSFzJXkhYxwhKK",
+    "transparent_secret_key_prefix": "f0",
+    "sapling_hrp": "cashdevsapling",
+    "sapling_extended_spending_key_hrp": "secret-extended-key-cashdev",
+    "sapling_extended_full_viewing_key_hrp": "cashdevzxviews",
+    "tex_hrp": "cashdevtex",
+    "unified_address_r0_hrp": "cashdev",
+    "unified_address_r2_hrp": "cashdevu",
+    "unified_address_r2_transparent_hrp": "cashdevtu",
+    "unified_full_viewing_key_r0_hrp": "cashdevview",
+    "unified_incoming_viewing_key_r0_hrp": "cashdevivk",
+    "unified_full_viewing_key_r2_hrp": "cashdevuvf",
+    "unified_incoming_viewing_key_r2_hrp": "cashdevuvi"
+  },
+  "wallet_enabled": false
+}

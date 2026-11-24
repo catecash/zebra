@@ -11,6 +11,9 @@ use crate::{
     transparent,
 };
 
+pub mod catecash;
+pub mod catecash_mainnet;
+pub mod catecash_testnet;
 mod error;
 pub mod magic;
 pub mod subsidy;
@@ -45,6 +48,13 @@ pub enum NetworkKind {
 
     /// Regtest mode
     Regtest,
+
+    /// The independent Catecash development network.
+    CatecashDevnet,
+    /// The candidate independent Catecash mainnet.
+    CatecashMainnet,
+    /// The independent Catecash public test network.
+    CatecashTestnet,
 }
 
 impl From<Network> for NetworkKind {
@@ -70,6 +80,13 @@ pub enum Network {
     /// A test network such as the default public testnet,
     /// a configured testnet, or Regtest.
     Testnet(Arc<testnet::Parameters>),
+
+    /// The independent Catecash development network.
+    CatecashDevnet,
+    /// The candidate independent Catecash mainnet.
+    CatecashMainnet,
+    /// The independent Catecash public test network.
+    CatecashTestnet,
 }
 
 impl NetworkKind {
@@ -80,6 +97,15 @@ impl NetworkKind {
             Self::Mainnet => zcash_address::constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
             Self::Testnet | Self::Regtest => {
                 zcash_address::constants::testnet::B58_PUBKEY_ADDRESS_PREFIX
+            }
+            Self::CatecashDevnet => {
+                zcash_address::constants::catecash_devnet::B58_PUBKEY_ADDRESS_PREFIX
+            }
+            Self::CatecashMainnet => {
+                zcash_address::constants::catecash_mainnet::B58_PUBKEY_ADDRESS_PREFIX
+            }
+            Self::CatecashTestnet => {
+                zcash_address::constants::catecash_testnet::B58_PUBKEY_ADDRESS_PREFIX
             }
         }
     }
@@ -92,16 +118,27 @@ impl NetworkKind {
             Self::Testnet | Self::Regtest => {
                 zcash_address::constants::testnet::B58_SCRIPT_ADDRESS_PREFIX
             }
+            Self::CatecashDevnet => {
+                zcash_address::constants::catecash_devnet::B58_SCRIPT_ADDRESS_PREFIX
+            }
+            Self::CatecashMainnet => {
+                zcash_address::constants::catecash_mainnet::B58_SCRIPT_ADDRESS_PREFIX
+            }
+            Self::CatecashTestnet => {
+                zcash_address::constants::catecash_testnet::B58_SCRIPT_ADDRESS_PREFIX
+            }
         }
     }
 
     /// Return the network name as defined in
     /// [BIP70](https://github.com/bitcoin/bips/blob/master/bip-0070.mediawiki#paymentdetailspaymentrequest)
     pub fn bip70_network_name(&self) -> String {
-        if *self == Self::Mainnet {
-            "main".to_string()
-        } else {
-            "test".to_string()
+        match self {
+            Self::Mainnet => "main".to_string(),
+            Self::Testnet | Self::Regtest => "test".to_string(),
+            Self::CatecashDevnet => "catecash-devnet".to_string(),
+            Self::CatecashMainnet => "catecash-mainnet".to_string(),
+            Self::CatecashTestnet => "catecash-testnet".to_string(),
         }
     }
 
@@ -112,6 +149,15 @@ impl NetworkKind {
         match self {
             Self::Mainnet => [0x1c, 0xb8],
             Self::Testnet | Self::Regtest => [0x1d, 0x25],
+            Self::CatecashDevnet => {
+                zcash_address::constants::catecash_devnet::B58_PUBKEY_ADDRESS_PREFIX
+            }
+            Self::CatecashMainnet => {
+                zcash_address::constants::catecash_mainnet::B58_PUBKEY_ADDRESS_PREFIX
+            }
+            Self::CatecashTestnet => {
+                zcash_address::constants::catecash_testnet::B58_PUBKEY_ADDRESS_PREFIX
+            }
         }
     }
 }
@@ -125,6 +171,9 @@ impl From<NetworkKind> for &'static str {
             NetworkKind::Mainnet => "MainnetKind",
             NetworkKind::Testnet => "TestnetKind",
             NetworkKind::Regtest => "RegtestKind",
+            NetworkKind::CatecashDevnet => "CatecashDevnetKind",
+            NetworkKind::CatecashMainnet => "CatecashMainnetKind",
+            NetworkKind::CatecashTestnet => "CatecashTestnetKind",
         }
     }
 }
@@ -140,6 +189,9 @@ impl<'a> From<&'a Network> for &'a str {
         match network {
             Network::Mainnet => "Mainnet",
             Network::Testnet(params) => params.network_name(),
+            Network::CatecashDevnet => "CatecashDevnet",
+            Network::CatecashMainnet => "CatecashMainnet",
+            Network::CatecashTestnet => "CatecashTestnet",
         }
     }
 }
@@ -165,6 +217,9 @@ impl std::fmt::Debug for Network {
                 write!(f, "{self}")
             }
             Self::Testnet(params) => f.debug_tuple("ConfiguredTestnet").field(params).finish(),
+            Self::CatecashDevnet => f.write_str("CatecashDevnet"),
+            Self::CatecashMainnet => f.write_str("CatecashMainnet"),
+            Self::CatecashTestnet => f.write_str("CatecashTestnet"),
         }
     }
 }
@@ -206,12 +261,28 @@ impl Network {
         }
     }
 
+    /// Returns true for the isolated Catecash development profile.
+    pub fn is_catecash_devnet(&self) -> bool {
+        matches!(self, Self::CatecashDevnet)
+    }
+
+    /// Returns true for either Catecash network.
+    pub fn is_catecash(&self) -> bool {
+        matches!(
+            self,
+            Self::CatecashDevnet | Self::CatecashMainnet | Self::CatecashTestnet
+        )
+    }
+
     /// Returns the [`NetworkKind`] for this network.
     pub fn kind(&self) -> NetworkKind {
         match self {
             Network::Mainnet => NetworkKind::Mainnet,
             Network::Testnet(params) if params.is_regtest() => NetworkKind::Regtest,
             Network::Testnet(_) => NetworkKind::Testnet,
+            Network::CatecashDevnet => NetworkKind::CatecashDevnet,
+            Network::CatecashMainnet => NetworkKind::CatecashMainnet,
+            Network::CatecashTestnet => NetworkKind::CatecashTestnet,
         }
     }
 
@@ -222,6 +293,9 @@ impl Network {
         match self {
             Network::Mainnet => NetworkKind::Mainnet,
             Network::Testnet(_) => NetworkKind::Testnet,
+            Network::CatecashDevnet => NetworkKind::CatecashDevnet,
+            Network::CatecashMainnet => NetworkKind::CatecashMainnet,
+            Network::CatecashTestnet => NetworkKind::CatecashTestnet,
         }
     }
 
@@ -243,6 +317,9 @@ impl Network {
             Network::Mainnet => true,
             // TODO: Move `TESTNET_MAX_TIME_START_HEIGHT` to a field on testnet::Parameters (#8364)
             Network::Testnet(_params) => height >= super::TESTNET_MAX_TIME_START_HEIGHT,
+            Network::CatecashDevnet => false,
+            Network::CatecashMainnet => true,
+            Network::CatecashTestnet => false,
         }
     }
 
@@ -252,6 +329,18 @@ impl Network {
             Network::Mainnet => 8233,
             // TODO: Add a `default_port` field to `testnet::Parameters` to return here. (zcashd uses 18344 for Regtest)
             Network::Testnet(_params) => 18233,
+            Network::CatecashDevnet => catecash::P2P_PORT,
+            Network::CatecashMainnet => catecash_mainnet::P2P_PORT,
+            Network::CatecashTestnet => catecash_testnet::P2P_PORT,
+        }
+    }
+
+    /// Minimum number of blocks before a transparent coinbase output can be spent.
+    pub fn transparent_coinbase_maturity(&self) -> u32 {
+        if self.is_catecash() {
+            catecash::COINBASE_MATURITY
+        } else {
+            transparent::MIN_TRANSPARENT_COINBASE_MATURITY
         }
     }
 
@@ -292,6 +381,7 @@ impl Network {
     pub fn directory_name(&self) -> String {
         let mut name = self.lowercase_name();
         if matches!(self, Self::Testnet(params) if !params.is_regtest() && !params.is_default_testnet())
+            || self.is_catecash()
         {
             use fmt::Write;
             write!(name, "-{:08x}", u32::from_be_bytes(self.magic().0))
@@ -302,7 +392,7 @@ impl Network {
 
     /// Returns `true` if this network is a testing network.
     pub fn is_a_test_network(&self) -> bool {
-        *self != Network::Mainnet
+        !matches!(self, Network::Mainnet | Network::CatecashMainnet)
     }
 
     /// Returns the Sapling activation height for this network.
@@ -328,6 +418,9 @@ impl Network {
                 subsidy::constants::testnet::EXPECTED_NU6_1_LOCKBOX_DISBURSEMENTS_TOTAL
             }
             Self::Testnet(params) => params.lockbox_disbursement_total_amount(),
+            Self::CatecashDevnet => Amount::zero(),
+            Self::CatecashMainnet => Amount::zero(),
+            Self::CatecashTestnet => Amount::zero(),
         }
     }
 
@@ -346,6 +439,9 @@ impl Network {
                 subsidy::constants::testnet::NU6_1_LOCKBOX_DISBURSEMENTS.to_vec()
             }
             Self::Testnet(params) => return params.lockbox_disbursements(),
+            Self::CatecashDevnet => return Vec::new(),
+            Self::CatecashMainnet => return Vec::new(),
+            Self::CatecashTestnet => return Vec::new(),
         };
 
         expected_lockbox_disbursements
@@ -367,6 +463,9 @@ impl Network {
             Network::Testnet(parameters) => {
                 parameters.temporary_orchard_disabling_soft_fork_height()
             }
+            Network::CatecashDevnet => None,
+            Network::CatecashMainnet => None,
+            Network::CatecashTestnet => None,
         }
     }
 
@@ -425,6 +524,7 @@ impl FromStr for Network {
         match string.to_lowercase().as_str() {
             "mainnet" => Ok(Network::Mainnet),
             "testnet" => Ok(Network::new_default_testnet()),
+            "catecash-testnet" => Ok(Network::CatecashTestnet),
             _ => Err(InvalidNetworkError(string.to_owned())),
         }
     }
@@ -446,5 +546,26 @@ impl zcash_protocol::consensus::Parameters for Network {
         NetworkUpgrade::from(nu)
             .activation_height(self)
             .map(|Height(h)| zcash_protocol::consensus::BlockHeight::from_u32(h))
+    }
+
+    fn branch_id_override(
+        &self,
+        height: zcash_protocol::consensus::BlockHeight,
+    ) -> Option<zcash_protocol::consensus::BranchId> {
+        (self.is_catecash_devnet()
+            && NetworkUpgrade::current(self, Height(u32::from(height))) == NetworkUpgrade::Nu7)
+            .then_some(zcash_protocol::consensus::BranchId::Catecash)
+            .or_else(|| {
+                (matches!(self, Self::CatecashMainnet)
+                    && NetworkUpgrade::current(self, Height(u32::from(height)))
+                        == NetworkUpgrade::Nu7)
+                    .then_some(zcash_protocol::consensus::BranchId::CatecashMainnet)
+            })
+            .or_else(|| {
+                (matches!(self, Self::CatecashTestnet)
+                    && NetworkUpgrade::current(self, Height(u32::from(height)))
+                        == NetworkUpgrade::Nu7)
+                    .then_some(zcash_protocol::consensus::BranchId::CatecashTestnet)
+            })
     }
 }

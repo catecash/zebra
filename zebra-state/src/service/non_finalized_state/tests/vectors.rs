@@ -370,6 +370,9 @@ fn invalidate_block_removes_block_and_descendants_from_chain_for_network(
                 .any(|block| block.height == block::Height(584001)),
             "invalidated descendants should contain block3"
         ),
+        Network::CatecashDevnet | Network::CatecashMainnet | Network::CatecashTestnet => {
+            unreachable!("this test only uses Zcash mainnet and testnet vectors")
+        }
     }
 
     Ok(())
@@ -1402,25 +1405,31 @@ fn nsm_subsidy_tracks_the_nsm_value_balance() -> Result<()> {
 
     // A block at `height` paying the ZIP's subsidy for `parent_pools`, and the part of `fees` that
     // ZIP 235 leaves to the miner, committing to `history_root`.
-    let subsidy_block = |height: Height,
-                         previous_block_hash,
-                         parent_pools,
-                         fees: Amount<NonNegative>,
-                         transactions,
-                         history_root: &_| {
-        let subsidy = block_subsidy_with_parent_pools(height, &network, parent_pools)
-            .expect("the block subsidy is valid");
-        let miner_fees = (fees - nsm_fee_contribution(height, &network, fees))
-            .expect("the contribution is at most the fees");
+    let subsidy_block =
+        |height: Height,
+         previous_block_hash,
+         parent_pools: zebra_chain::value_balance::network::NetworkChainValuePools,
+         fees: Amount<NonNegative>,
+         transactions,
+         history_root: &_| {
+            let subsidy =
+                zebra_chain::parameters::subsidy::block_subsidy_with_parent_nsm_value_balance(
+                    height,
+                    &network,
+                    parent_pools.nsm_amount(),
+                )
+                .expect("the block subsidy is valid");
+            let miner_fees = (fees - nsm_fee_contribution(height, &network, fees))
+                .expect("the contribution is at most the fees");
 
-        committed_block(
-            height,
-            previous_block_hash,
-            (subsidy + miner_fees).expect("valid amount"),
-            transactions,
-            history_root,
-        )
-    };
+            committed_block(
+                height,
+                previous_block_hash,
+                (subsidy + miner_fees).expect("valid amount"),
+                transactions,
+                history_root,
+            )
+        };
 
     let finalized_state = FinalizedState::new(&Config::ephemeral(), &network)?;
 
@@ -1499,7 +1508,12 @@ fn nsm_subsidy_tracks_the_nsm_value_balance() -> Result<()> {
 
             // From the deployment height, a block paying only the scheduled subsidy is rejected,
             // and so is one claiming the fees that ZIP 235 removes from circulation.
-            let subsidy = block_subsidy_with_parent_pools(height, &network, parent_pools)?;
+            let subsidy =
+                zebra_chain::parameters::subsidy::block_subsidy_with_parent_nsm_value_balance(
+                    height,
+                    &network,
+                    parent_pools.nsm_amount(),
+                )?;
             let mut invalid_coinbase_values =
                 vec![(scheduled_block_subsidy(height, &network)? + miner_fees)?];
             if !contributed.is_zero() {
@@ -2811,18 +2825,18 @@ fn address_balance_from_a_height_skips_lower_blocks() -> Result<()> {
     let (whole_balance, whole_received) = chain.partial_transparent_balance_change(&addresses);
     let (tip_balance, tip_received) =
         chain.partial_transparent_balance_change_from(&addresses, tip);
-    assert_eq!(whole_received, value_to(&block1) + value_to(&block2));
-    assert_eq!(tip_received, value_to(&block2));
+    assert_eq!(
+        whole_received,
+        u128::from(value_to(&block1) + value_to(&block2))
+    );
+    assert_eq!(tip_received, u128::from(value_to(&block2)));
     assert_eq!(
         whole_balance,
         chain
             .partial_transparent_balance_change_from(&addresses, root)
             .0
     );
-    assert_eq!(
-        i128::from(whole_balance.zatoshis()) - i128::from(tip_balance.zatoshis()),
-        i128::from(value_to(&block1)),
-    );
+    assert_eq!(whole_balance - tip_balance, i128::from(value_to(&block1)),);
 
     Ok(())
 }
@@ -3040,6 +3054,148 @@ fn push_transparent_block(
     Ok(chain)
 }
 
+/// A fork at the first block above Zcash's old money cap must roll back the
+/// wide pool and address indexes before applying the replacement block.
+#[test]
+fn catecash_reorg_across_legacy_money_cap() -> Result<()> {
+    use std::collections::HashSet;
+
+    use zebra_chain::{
+        amount::DeferredPoolBalanceChange,
+        parameters::NetworkKind,
+        transaction::{LockTime, Transaction},
+        value_balance::{network::NetworkChainValuePools, wide::WideValueBalance},
+    };
+
+    use crate::ContextuallyVerifiedBlock;
+
+    let _init_guard = zebra_test::init();
+    let network = Network::CatecashDevnet;
+    let reward = 500_000_000_000i128;
+    let miner_a = transparent::Address::from_pub_key_hash(NetworkKind::CatecashDevnet, [1; 20]);
+    let miner_b = transparent::Address::from_pub_key_hash(NetworkKind::CatecashDevnet, [2; 20]);
+    let parent_pools = NetworkChainValuePools::Catecash(WideValueBalance::new(
+        [4_199 * reward, 0, 0, 0, 0, 0, 0],
+        zebra_chain::value_balance::wide::CATECASH_MAX_SCHEDULED_SUPPLY_ZAT,
+    )?);
+    let template: Block =
+        zebra_test::vectors::BLOCK_MAINNET_434873_BYTES.zcash_deserialize_into()?;
+    let mut parent_block = template.clone();
+    parent_block.transactions = vec![Arc::new(Transaction::test_v4(
+        vec![transparent::Input::Coinbase {
+            height: Height(4_199),
+            data: vec![0],
+            sequence: u32::MAX,
+        }],
+        vec![transparent::Output::new(
+            Amount::try_from(reward)?,
+            miner_a.script(),
+        )],
+        LockTime::unlocked(),
+        Height(4_199),
+    ))];
+    Arc::make_mut(&mut parent_block.header).merkle_root =
+        parent_block.transactions.iter().collect();
+    let note_trees = NoteCommitmentTrees::default();
+    let sapling_root = note_trees.sapling.root();
+    let orchard_root = note_trees.orchard.root();
+    let ironwood_root = note_trees.ironwood.root();
+    let history_tree = zebra_chain::history_tree::HistoryTree::from_block(
+        &network,
+        Arc::new(parent_block),
+        BlockCommitmentTreeRoots {
+            sapling: &sapling_root,
+            orchard: &orchard_root,
+            ironwood: &ironwood_root,
+        },
+    )?;
+    let mut chain = Chain::new(
+        &network,
+        Height(4_199),
+        note_trees,
+        Arc::new(history_tree),
+        parent_pools,
+    );
+
+    let add_reward = |chain: Chain, height: Height, recipient: transparent::Address| {
+        let coinbase = Arc::new(Transaction::test_v4(
+            vec![transparent::Input::Coinbase {
+                height,
+                data: vec![0],
+                sequence: u32::MAX,
+            }],
+            vec![transparent::Output::new(
+                Amount::try_from(reward).unwrap(),
+                recipient.script(),
+            )],
+            LockTime::unlocked(),
+            height,
+        ));
+        let mut block = template.clone();
+        Arc::make_mut(&mut block.header).previous_block_hash = if chain.blocks.is_empty() {
+            template.header.previous_block_hash
+        } else {
+            chain.non_finalized_tip_hash()
+        };
+        block.transactions = vec![coinbase];
+        Arc::make_mut(&mut block.header).merkle_root = block.transactions.iter().collect();
+        let block = Arc::new(block);
+        let verified = ContextuallyVerifiedBlock::with_block_and_spent_utxos(
+            block.prepare(),
+            chain.unspent_utxos(),
+            DeferredPoolBalanceChange::zero(),
+            &network,
+            chain.chain_value_pools,
+        )
+        .expect("fixture reward has a valid pool change");
+        chain.push(verified)
+    };
+
+    chain = add_reward(chain, Height(4_200), miner_a)?;
+    let fork_hash = chain.non_finalized_tip_hash();
+    assert_eq!(chain.chain_value_pools.pools()[0], 4_200 * reward);
+
+    let original = add_reward(chain, Height(4_201), miner_a)?;
+    let original_hash = original.non_finalized_tip_hash();
+    assert_eq!(original.chain_value_pools.pools()[0], 4_201 * reward);
+    assert_eq!(
+        original.partial_transparent_balance_change_from(&HashSet::from([miner_a]), Height(4_200)),
+        (2 * reward, u128::try_from(2 * reward).unwrap()),
+    );
+
+    let fork = original
+        .fork(fork_hash)
+        .expect("the fork point is in the chain");
+    assert_eq!(fork.chain_value_pools.pools()[0], 4_200 * reward);
+    let replacement = add_reward(fork, Height(4_201), miner_b)?;
+    assert_ne!(replacement.non_finalized_tip_hash(), original_hash);
+    assert_eq!(replacement.chain_value_pools.pools()[0], 4_201 * reward);
+    assert_eq!(
+        fork_hash.to_string(),
+        "3d9628fa458ca75ee6bf3a398dd7061a7f7976456c9f567a027f3115efc67bba"
+    );
+    assert_eq!(
+        original_hash.to_string(),
+        "907cf586eb21a395bbeac8d0b4475e225f891e552b81482ff79381cc297ed065"
+    );
+    assert_eq!(
+        replacement.non_finalized_tip_hash().to_string(),
+        "ac18c9011c05fdc69482c02bb303286a822cb3639a3604b0b0029de0993e9e82"
+    );
+    assert_eq!(
+        replacement
+            .partial_transparent_balance_change_from(&HashSet::from([miner_a]), Height(4_200)),
+        (reward, u128::try_from(reward).unwrap()),
+    );
+    assert_eq!(
+        replacement
+            .partial_transparent_balance_change_from(&HashSet::from([miner_b]), Height(4_200)),
+        (reward, u128::try_from(reward).unwrap()),
+    );
+
+    Ok(())
+}
+
 /// Returns each of `addresses` on its own, all of them, and an address without any transfers.
 fn transparent_address_sets(
     addresses: &[transparent::Address],
@@ -3107,7 +3263,7 @@ fn transparent_balance_change_skips_blocks_below_min_height() -> Result<()> {
             (root + 1).expect("valid height"),
         );
         assert_ne!(full_change, skipped_change);
-        assert_ne!(skipped_change.0, Amount::<NegativeAllowed>::zero());
+        assert_ne!(skipped_change.0, 0);
 
         // If all the blocks are skipped, there is no change.
         assert_eq!(
@@ -3115,7 +3271,7 @@ fn transparent_balance_change_skips_blocks_below_min_height() -> Result<()> {
                 all_addresses,
                 (tip + 1).expect("valid height")
             ),
-            (Amount::zero(), 0),
+            (0, 0),
         );
     }
 
@@ -3224,10 +3380,10 @@ fn transparent_balance_change_does_not_overflow_with_large_overlapping_transfers
     chain.pop_root();
     let min_height = final_receiver_height;
 
-    let large_change = large_value.constrain::<NegativeAllowed>()?;
-    let zero_change = Amount::<NegativeAllowed>::zero();
-    let negative_large_change = (zero_change - large_change)?;
-    let large_received = u64::from(large_value);
+    let large_change = i128::from(large_value.zatoshis());
+    let zero_change = 0i128;
+    let negative_large_change = -large_change;
+    let large_received = u128::from(u64::from(large_value));
 
     let expected_changes = [
         (vec![sender], (zero_change, 0)),

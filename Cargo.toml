@@ -46,6 +46,13 @@ keywords = ["zebra", "zcash"]
 rust-version = "1.89"
 edition = "2021"
 
+[patch.crates-io]
+zcash_address = { path = "vendor/zcash_address" }
+zcash_keys = { path = "vendor/zcash_keys" }
+zcash_protocol = { path = "vendor/zcash_protocol" }
+zcash_primitives = { path = "vendor/zcash_primitives" }
+zcash_transparent = { path = "vendor/zcash_transparent" }
+
 # `cargo release` settings
 
 [workspace.dependencies]

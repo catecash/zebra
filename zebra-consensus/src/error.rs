@@ -12,10 +12,8 @@ use thiserror::Error;
 
 use zcash_protocol::value::BalanceError;
 use zebra_chain::{
-    amount, block, ironwood, orchard,
-    parameters::subsidy::SubsidyError,
-    sapling, sprout,
-    transparent::{self, MIN_TRANSPARENT_COINBASE_MATURITY},
+    amount, block, ironwood, orchard, parameters::subsidy::SubsidyError, sapling, sprout,
+    transparent,
 };
 use zebra_state::ValidateContextError;
 
@@ -226,9 +224,7 @@ pub enum TransactionError {
     #[error(
         "immature transparent coinbase spend: \
         attempt to spend {outpoint:?} at {spend_height:?}, \
-        but spends are invalid before {min_spend_height:?}, \
-        which is {MIN_TRANSPARENT_COINBASE_MATURITY:?} blocks \
-        after it was created at {created_height:?}"
+        created at {created_height:?} and invalid before {min_spend_height:?}"
     )]
     #[non_exhaustive]
     ImmatureTransparentCoinbaseSpend {

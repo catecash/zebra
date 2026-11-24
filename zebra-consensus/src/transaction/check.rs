@@ -19,7 +19,7 @@ use zcash_script::{
 use zebra_chain::{
     amount::{Amount, NegativeAllowed},
     block::Height,
-    parameters::{Network, NetworkUpgrade},
+    parameters::{ConsensusBranchId, Network, NetworkUpgrade},
     primitives::zcash_note_encryption,
     transaction::{LockTime, Transaction},
     transparent,
@@ -646,7 +646,12 @@ pub fn tx_transparent_coinbase_spends_maturity(
             .or_else(|| spent_utxos.get(&spend).cloned())
             .expect("load_spent_utxos_fut.await should return an error if a utxo is missing");
 
-        zebra_state::check::transparent_coinbase_spend(spend, spend_restriction, &utxo)?;
+        zebra_state::check::transparent_coinbase_spend(
+            spend,
+            spend_restriction,
+            &utxo,
+            network.transparent_coinbase_maturity(),
+        )?;
     }
 
     Ok(())
@@ -908,6 +913,12 @@ pub fn consensus_branch_id(
     };
 
     if tx_nu != current_nu {
+        return Err(TransactionError::WrongConsensusBranchId);
+    }
+
+    if Some(u32::from(tx.consensus_branch_id()).into())
+        != ConsensusBranchId::current(network, height)
+    {
         return Err(TransactionError::WrongConsensusBranchId);
     }
 

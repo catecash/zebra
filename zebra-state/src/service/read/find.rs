@@ -22,7 +22,7 @@ use zebra_chain::{
     amount::NonNegative,
     block::{self, Block, Height},
     serialization::DateTime32,
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use crate::{
@@ -111,7 +111,7 @@ where
 pub fn tip_with_value_balance<C>(
     chain: Option<C>,
     db: &ZebraDb,
-) -> Result<Option<(Height, block::Hash, ValueBalance<NonNegative>)>, BoxError>
+) -> Result<Option<(Height, block::Hash, NetworkChainValuePools)>, BoxError>
 where
     C: AsRef<Chain>,
 {

@@ -75,27 +75,19 @@ pub(crate) fn block_precommit_metrics(block: &Block, hash: block::Hash, height: 
 /// - Monitoring total chain supply
 ///
 /// The values are in zatoshis (1 ZEC = 100,000,000 zatoshis).
-pub(crate) fn value_pool_metrics(value_pool: &ValueBalance<NonNegative>) {
+pub(crate) fn value_pool_metrics(
+    value_pool: &zebra_chain::value_balance::network::NetworkChainValuePools,
+) {
+    let pools = value_pool.pools();
     // Individual pool balances (zatoshis)
-    metrics::gauge!("state.finalized.value_pool.transparent")
-        .set(u64::from(value_pool.transparent_amount()) as f64);
-    metrics::gauge!("state.finalized.value_pool.sprout")
-        .set(u64::from(value_pool.sprout_amount()) as f64);
-    metrics::gauge!("state.finalized.value_pool.sapling")
-        .set(u64::from(value_pool.sapling_amount()) as f64);
-    metrics::gauge!("state.finalized.value_pool.orchard")
-        .set(u64::from(value_pool.orchard_amount()) as f64);
-    metrics::gauge!("state.finalized.value_pool.ironwood")
-        .set(u64::from(value_pool.ironwood_amount()) as f64);
-    metrics::gauge!("state.finalized.value_pool.deferred")
-        .set(u64::from(value_pool.deferred_amount()) as f64);
+    metrics::gauge!("state.finalized.value_pool.transparent").set(pools[0] as f64);
+    metrics::gauge!("state.finalized.value_pool.sprout").set(pools[1] as f64);
+    metrics::gauge!("state.finalized.value_pool.sapling").set(pools[2] as f64);
+    metrics::gauge!("state.finalized.value_pool.orchard").set(pools[3] as f64);
+    metrics::gauge!("state.finalized.value_pool.ironwood").set(pools[5] as f64);
+    metrics::gauge!("state.finalized.value_pool.deferred").set(pools[4] as f64);
 
     // Total chain supply (sum of all pools)
-    let total_supply = u64::from(value_pool.transparent_amount())
-        + u64::from(value_pool.sprout_amount())
-        + u64::from(value_pool.sapling_amount())
-        + u64::from(value_pool.orchard_amount())
-        + u64::from(value_pool.ironwood_amount())
-        + u64::from(value_pool.deferred_amount());
+    let total_supply: i128 = pools[..6].iter().sum();
     metrics::gauge!("state.finalized.chain_supply.total").set(total_supply as f64);
 }

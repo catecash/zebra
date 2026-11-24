@@ -107,6 +107,15 @@ impl SupervisorConfig {
                 // would reject with a peer ban.
                 args.push("-regtestacceptunvalidatedpow".to_string());
             }
+            NetworkKind::CatecashDevnet => {
+                unreachable!("Catecash devnet is rejected before zcashd compatibility starts")
+            }
+            NetworkKind::CatecashMainnet => {
+                unreachable!("Catecash mainnet is rejected before zcashd compatibility starts")
+            }
+            NetworkKind::CatecashTestnet => {
+                unreachable!("Catecash testnet is rejected before zcashd compatibility starts")
+            }
         }
 
         // Always include -printtoconsole and filter it out from extra_args

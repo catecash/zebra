@@ -271,6 +271,9 @@ impl ParameterSubsidy for Network {
         match self {
             Network::Mainnet => POST_BLOSSOM_HALVING_INTERVAL,
             Network::Testnet(params) => params.post_blossom_halving_interval(),
+            Network::CatecashDevnet => POST_BLOSSOM_HALVING_INTERVAL,
+            Network::CatecashMainnet => POST_BLOSSOM_HALVING_INTERVAL,
+            Network::CatecashTestnet => POST_BLOSSOM_HALVING_INTERVAL,
         }
     }
 
@@ -278,6 +281,9 @@ impl ParameterSubsidy for Network {
         match self {
             Network::Mainnet => PRE_BLOSSOM_HALVING_INTERVAL,
             Network::Testnet(params) => params.pre_blossom_halving_interval(),
+            Network::CatecashDevnet => PRE_BLOSSOM_HALVING_INTERVAL,
+            Network::CatecashMainnet => PRE_BLOSSOM_HALVING_INTERVAL,
+            Network::CatecashTestnet => PRE_BLOSSOM_HALVING_INTERVAL,
         }
     }
 
@@ -288,6 +294,9 @@ impl ParameterSubsidy for Network {
                 params.post_blossom_halving_interval()
                     * HeightDiff::from(NU7_POW_TARGET_SPACING_RATIO)
             }
+            Network::CatecashDevnet => POST_NU7_HALVING_INTERVAL,
+            Network::CatecashMainnet => POST_NU7_HALVING_INTERVAL,
+            Network::CatecashTestnet => POST_NU7_HALVING_INTERVAL,
         }
     }
 
@@ -454,6 +463,10 @@ pub fn funding_stream_values(
 ) -> Result<HashMap<FundingStreamReceiver, Amount<NonNegative>>, amount::Error> {
     let mut results = HashMap::new();
 
+    if network.is_catecash() {
+        return Ok(results);
+    }
+
     if expected_block_subsidy.is_zero() {
         return Ok(results);
     }
@@ -548,6 +561,9 @@ impl Network {
             Network::Mainnet => Amount::try_from(MAINNET_INITIAL_NSM_VALUE_BALANCE)
                 .expect("hard-coded initial NSM value balance should be valid"),
             Network::Testnet(params) => params.initial_nsm_value_balance(),
+            Network::CatecashDevnet => Amount::zero(),
+            Network::CatecashMainnet => Amount::zero(),
+            Network::CatecashTestnet => Amount::zero(),
         }
     }
 
@@ -565,6 +581,9 @@ impl Network {
                 *HEIGHT
             }
             Network::Testnet(params) => params.nsm_reissuance_height(),
+            Network::CatecashDevnet => None,
+            Network::CatecashMainnet => None,
+            Network::CatecashTestnet => None,
         }
     }
 }
@@ -735,6 +754,9 @@ pub fn nsm_fee_contribution(
     network: &Network,
     block_miner_fees: Amount<NonNegative>,
 ) -> Amount<NonNegative> {
+    if network.is_catecash() {
+        return Amount::zero();
+    }
     if !nsm_value_balance_is_tracked(height, network) {
         return Amount::zero();
     }
@@ -752,6 +774,9 @@ pub fn nsm_fee_contribution(
 ///
 /// [zip]: https://zips.z.cash/zip-0237
 pub fn nsm_value_balance_is_tracked(height: Height, network: &Network) -> bool {
+    if network.is_catecash() {
+        return false;
+    }
     NetworkUpgrade::Nu7
         .activation_height(network)
         .is_some_and(|activation_height| height >= activation_height)
@@ -762,6 +787,9 @@ pub fn nsm_value_balance_is_tracked(height: Height, network: &Network) -> bool {
 ///
 /// [zip]: https://zips.z.cash/zip-0237
 pub fn nsm_reissuance_is_active(height: Height, network: &Network) -> bool {
+    if network.is_catecash() {
+        return false;
+    }
     network
         .nsm_reissuance_height()
         .is_some_and(|deployment_height| height >= deployment_height)
@@ -809,6 +837,22 @@ pub fn nsm_value_balance_change(
     parent_chain_value_pools: ValueBalance<NonNegative>,
     block_miner_fees: Amount<NonNegative>,
 ) -> Result<Amount<NegativeAllowed>, amount::Error> {
+    nsm_value_balance_change_with_parent_nsm(
+        height,
+        network,
+        parent_chain_value_pools.nsm_amount(),
+        block_miner_fees,
+    )
+}
+
+/// Calculate the NSM change from only the parent reserve balance. Wide chain
+/// pools need no narrowing conversion because NSM retains transaction width.
+pub fn nsm_value_balance_change_with_parent_nsm(
+    height: Height,
+    network: &Network,
+    parent_nsm_value_balance: Amount<NonNegative>,
+    block_miner_fees: Amount<NonNegative>,
+) -> Result<Amount<NegativeAllowed>, amount::Error> {
     if !nsm_value_balance_is_tracked(height, network) {
         return Ok(Amount::zero());
     }
@@ -819,7 +863,7 @@ pub fn nsm_value_balance_change(
     let reissued = additional_block_subsidy(
         height,
         network,
-        nsm_value_balance_before(height, network, parent_chain_value_pools.nsm_amount()),
+        nsm_value_balance_before(height, network, parent_nsm_value_balance),
     )
     .constrain::<NegativeAllowed>()?;
 
@@ -909,6 +953,15 @@ pub fn scheduled_block_subsidy(
     height: Height,
     net: &Network,
 ) -> Result<Amount<NonNegative>, SubsidyError> {
+    if net.is_catecash() {
+        // Genesis creates no spendable coins. Every later block has the same reward.
+        // Catecash targets 25-second blocks with a fixed 5,000 CATE reward.
+        return Ok(if height == Height::MIN {
+            Amount::zero()
+        } else {
+            Amount::try_from(super::catecash::BLOCK_REWARD_ZAT)?
+        });
+    }
     let Some(halving_div) = halving_divisor(height, net) else {
         return Ok(Amount::zero());
     };
@@ -1095,6 +1148,9 @@ pub fn founders_reward_address(net: &Network, height: Height) -> Option<transpar
 ///
 /// [§7.8]: <https://zips.z.cash/protocol/protocol.pdf#subsidies>
 pub fn founders_reward(net: &Network, height: Height) -> Amount<NonNegative> {
+    if net.is_catecash() {
+        return Amount::zero();
+    }
     // The founders reward is 20% of the block subsidy before the first halving, and 0 afterwards.
     //
     // On custom testnets, the first halving can occur later than Canopy, which causes an

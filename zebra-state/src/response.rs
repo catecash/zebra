@@ -16,7 +16,7 @@ use zebra_chain::{
     subtree::{NoteCommitmentSubtreeData, NoteCommitmentSubtreeIndex},
     transaction::{self, Transaction},
     transparent,
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use zebra_chain::work::difficulty::CompactDifficulty;
@@ -395,7 +395,7 @@ pub enum ReadResponse {
         /// The current best chain tip hash.
         tip_hash: block::Hash,
         /// The value pool balance at the current best chain tip.
-        value_balance: ValueBalance<NonNegative>,
+        value_balance: NetworkChainValuePools,
     },
 
     /// Response to [`ReadRequest::BlockInfo`] with
@@ -510,9 +510,9 @@ pub enum ReadResponse {
     /// and the total received funds, including change.
     AddressBalance {
         /// The total balance of the addresses.
-        balance: Amount<NonNegative>,
+        balance: i128,
         /// The total received funds in zatoshis, including change.
-        received: u64,
+        received: u128,
     },
 
     /// Response to [`ReadRequest::TransactionIdsByAddresses`]
@@ -595,8 +595,7 @@ pub struct GetBlockTemplateChainInfo {
     /// Depends on the `tip_hash`.
     ///
     /// [zip]: https://zips.z.cash/zip-0237
-    pub chain_value_pools:
-        zebra_chain::value_balance::ValueBalance<zebra_chain::amount::NonNegative>,
+    pub chain_value_pools: NetworkChainValuePools,
 }
 
 /// Conversion from read-only [`ReadResponse`]s to read-write [`Response`]s.

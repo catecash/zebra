@@ -24,6 +24,9 @@ impl Network {
         match self {
             Network::Mainnet => magics::MAINNET,
             Network::Testnet(params) => params.network_magic(),
+            Network::CatecashDevnet => super::catecash::MAGIC,
+            Network::CatecashMainnet => super::catecash_mainnet::MAGIC,
+            Network::CatecashTestnet => super::catecash_testnet::MAGIC,
         }
     }
 }

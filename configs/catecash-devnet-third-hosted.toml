@@ -1,0 +1,16 @@
+# Third hosted Catecash devnet verifier. It connects to both existing loopback nodes.
+[network]
+network = "CatecashDevnet"
+listen_addr = "127.0.0.1:34346"
+initial_testnet_peers = ["127.0.0.1:34343", "127.0.0.1:34344"]
+peerset_initial_target_size = 2
+max_connections_per_ip = 2
+cache_dir = false
+
+[state]
+cache_dir = "/var/lib/catecash/third-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34348"
+enable_cookie_auth = true
+cookie_dir = "/var/lib/catecash/third-rpc"

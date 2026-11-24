@@ -730,6 +730,9 @@ impl ParameterDifficulty for Network {
             Network::Mainnet => (U256::one() << 243) - 1,
             // 2^251 - 1 for the default testnet, see `testnet::ParametersBuilder::default`()
             Network::Testnet(params) => return params.target_difficulty_limit(),
+            Network::CatecashDevnet => return crate::parameters::catecash::pow_limit(),
+            Network::CatecashMainnet => return crate::parameters::catecash_mainnet::pow_limit(),
+            Network::CatecashTestnet => return crate::parameters::catecash_testnet::pow_limit(),
         };
 
         // `zcashd` converts the PoWLimit into a compact representation before

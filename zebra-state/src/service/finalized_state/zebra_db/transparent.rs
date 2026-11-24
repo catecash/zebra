@@ -121,10 +121,7 @@ impl ZebraDb {
 
     /// Returns the balance and received balance for a [`transparent::Address`],
     /// if it is in the finalized state.
-    pub fn address_balance(
-        &self,
-        address: &transparent::Address,
-    ) -> Option<(Amount<NonNegative>, u64)> {
+    pub fn address_balance(&self, address: &transparent::Address) -> Option<(i128, u128)> {
         self.address_balance_location(address)
             .map(|abl| (abl.balance(), abl.received()))
     }
@@ -375,15 +372,22 @@ impl ZebraDb {
     pub fn partial_finalized_transparent_balance(
         &self,
         addresses: &HashSet<transparent::Address>,
-    ) -> (Amount<NonNegative>, u64) {
-        let balance: amount::Result<(Amount<NonNegative>, u64)> = addresses
+    ) -> (i128, u128) {
+        let balance: Result<(i128, u128), &'static str> = addresses
             .iter()
             .filter_map(|address| self.address_balance(address))
             .try_fold(
-                (Amount::zero(), 0),
-                |(a_balance, a_received): (Amount<NonNegative>, u64), (b_balance, b_received)| {
-                    let received = a_received.saturating_add(b_received);
-                    Ok(((a_balance + b_balance)?, received))
+                (0, 0),
+                |(a_balance, a_received): (i128, u128), (b_balance, b_received)| {
+                    let received = a_received
+                        .checked_add(b_received)
+                        .ok_or("address received total overflow")?;
+                    Ok((
+                        a_balance
+                            .checked_add(b_balance)
+                            .ok_or("address balance overflow")?,
+                        received,
+                    ))
                 },
             );
 

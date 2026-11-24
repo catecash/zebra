@@ -29,7 +29,7 @@ use zebra_chain::{
     serialization::{CompactSizeMessage, TrustedPreallocate, ZcashSerialize as _},
     transaction::{self, Transaction},
     transparent,
-    value_balance::ValueBalance,
+    value_balance::{network::NetworkChainValuePools, ValueBalance},
 };
 
 use crate::{
@@ -744,7 +744,7 @@ impl DiskWriteBatch {
             OutputLocation,
         >,
         address_balances: AddressBalanceLocationUpdates,
-        value_pool: ValueBalance<NonNegative>,
+        value_pool: NetworkChainValuePools,
         prev_note_commitment_trees: Option<NoteCommitmentTrees>,
     ) -> Result<(), CommitCheckpointVerifiedError> {
         let db = &zebra_db.db;

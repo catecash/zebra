@@ -1,0 +1,21 @@
+# Second private hosted testnet seed. No miner or public P2P listener.
+[network]
+network = "CatecashTestnet"
+listen_addr = "10.57.1.2:34353"
+initial_mainnet_peers = []
+initial_testnet_peers = ["10.57.1.1:34353"]
+peerset_initial_target_size = 1
+max_connections_per_ip = 2
+cache_dir = false
+
+[state]
+cache_dir = "/var/lib/catecash-testnet"
+
+[rpc]
+listen_addr = "127.0.0.1:34352"
+enable_cookie_auth = false
+
+[mining]
+# Slot 1 uses the public testnet schedule; rotate manually while this host serves Zaino.
+miner_address = "EMCVq9p34coXbjXD42Zzoonxb21XE141qqX"
+internal_miner = true

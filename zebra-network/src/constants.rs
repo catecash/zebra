@@ -503,6 +503,9 @@ lazy_static! {
         hash_map.insert(NetworkKind::Mainnet, Version::min_specified_for_upgrade(&Mainnet, Nu6_2));
         hash_map.insert(NetworkKind::Testnet, Version::min_specified_for_upgrade(&Network::new_default_testnet(), Nu6_2));
         hash_map.insert(NetworkKind::Regtest, Version::min_specified_for_upgrade(&Network::new_regtest(Default::default()), Nu6_2));
+        hash_map.insert(NetworkKind::CatecashDevnet, CURRENT_NETWORK_PROTOCOL_VERSION);
+        hash_map.insert(NetworkKind::CatecashMainnet, CURRENT_NETWORK_PROTOCOL_VERSION);
+        hash_map.insert(NetworkKind::CatecashTestnet, CURRENT_NETWORK_PROTOCOL_VERSION);
 
         hash_map
     };

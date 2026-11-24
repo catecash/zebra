@@ -187,6 +187,9 @@ impl From<NetworkType> for NetworkKind {
             NetworkType::Main => NetworkKind::Mainnet,
             NetworkType::Test => NetworkKind::Testnet,
             NetworkType::Regtest => NetworkKind::Regtest,
+            NetworkType::CatecashDevnet => NetworkKind::CatecashDevnet,
+            NetworkType::CatecashMainnet => NetworkKind::CatecashMainnet,
+            NetworkType::CatecashTestnet => NetworkKind::CatecashTestnet,
         }
     }
 }
@@ -197,6 +200,9 @@ impl From<NetworkKind> for NetworkType {
             NetworkKind::Mainnet => NetworkType::Main,
             NetworkKind::Testnet => NetworkType::Test,
             NetworkKind::Regtest => NetworkType::Regtest,
+            NetworkKind::CatecashDevnet => NetworkType::CatecashDevnet,
+            NetworkKind::CatecashMainnet => NetworkType::CatecashMainnet,
+            NetworkKind::CatecashTestnet => NetworkType::CatecashTestnet,
         }
     }
 }

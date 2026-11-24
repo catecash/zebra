@@ -6,7 +6,10 @@
 use crate::{
     amount::Amount,
     block::Height,
-    parameters::{testnet::ConfiguredActivationHeights, Network, NetworkKind, NetworkUpgrade},
+    parameters::{
+        testnet::ConfiguredActivationHeights, ConsensusBranchId, Network, NetworkKind,
+        NetworkUpgrade,
+    },
     serialization::{ZcashDeserializeInto, ZcashSerialize},
     transaction::{self, Transaction, TransparentSigningKey},
     transparent,
@@ -14,6 +17,44 @@ use crate::{
 
 /// ZIP-317 conventional fee for a transaction with two logical actions.
 const TWO_ACTION_FEE: i64 = 10_000;
+
+#[test]
+fn catecash_transparent_signer_uses_its_branch_id() {
+    let network = Network::CatecashDevnet;
+    assert_eq!(
+        zcash_protocol::consensus::BranchId::for_height(&network, Height(2).into()),
+        zcash_protocol::consensus::BranchId::Catecash
+    );
+    let key = TransparentSigningKey::random();
+    let address = key.address(NetworkKind::CatecashDevnet);
+    let outpoint = transparent::OutPoint {
+        hash: transaction::Hash([1; 32]),
+        index: 0,
+    };
+    let coin = transparent::Output {
+        value: Amount::try_from(100_000_000).unwrap(),
+        lock_script: address.script(),
+    };
+    let tx = Transaction::signed_transparent(
+        &network,
+        Height(2),
+        &key,
+        &[(outpoint, coin)],
+        &[(address, Amount::try_from(30_000_000).unwrap())],
+    )
+    .unwrap();
+    assert_eq!(tx.version(), 6);
+    assert_eq!(
+        u32::from(tx.consensus_branch_id()),
+        u32::from(ConsensusBranchId::CATECASH_LAUNCH)
+    );
+    let parsed: Transaction = tx
+        .zcash_serialize_to_vec()
+        .unwrap()
+        .zcash_deserialize_into()
+        .unwrap();
+    assert_eq!(parsed, tx);
+}
 
 #[test]
 fn signed_transparent_pays_outputs_fee_and_change() {

@@ -51,12 +51,16 @@ pub async fn start(
     tokio::time::sleep(INITIAL_WAIT).await;
 
     loop {
-        if network == Network::Mainnet {
-            if let Some(tip_height) = latest_chain_tip.best_tip_height() {
-                check(tip_height, &network);
+        match network {
+            Network::Mainnet => {
+                if let Some(tip_height) = latest_chain_tip.best_tip_height() {
+                    check(tip_height, &network);
+                }
             }
-        } else {
-            info!("Release always valid in Testnet");
+            Network::Testnet(_) => info!("Release always valid in Testnet"),
+            Network::CatecashDevnet => info!("Release always valid in Catecash devnet"),
+            Network::CatecashMainnet => info!("Candidate Catecash mainnet has no release schedule"),
+            Network::CatecashTestnet => info!("Catecash testnet has no release schedule"),
         }
         tokio::time::sleep(CHECK_INTERVAL).await;
     }

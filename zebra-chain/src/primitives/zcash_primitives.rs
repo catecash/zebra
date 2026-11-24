@@ -230,17 +230,21 @@ impl PrecomputedTxData {
         nu: NetworkUpgrade,
         all_previous_outputs: Arc<Vec<transparent::Output>>,
     ) -> Result<PrecomputedTxData, Error> {
-        let branch_id = nu
-            .branch_id()
-            .and_then(|cbid| zcash_protocol::consensus::BranchId::try_from(cbid).ok())
-            .ok_or(Error::InvalidConsensusBranchId)?;
-
-        // For V5+ transactions, the branch_id is embedded and must match.
-        // For V4 transactions, use the network upgrade's branch_id for the sighash.
         let tx_branch_id = tx.inner().deref().consensus_branch_id();
-        if tx.version() >= 5 && tx_branch_id != branch_id {
-            return Err(Error::InvalidConsensusBranchId);
-        }
+        let branch_id = if tx.version() >= 5 {
+            // The embedded branch ID is the signing domain. Catecash uses
+            // NU7 rules with a different ID, checked against its network in
+            // contextual transaction and block validation.
+            if tx.network_upgrade() != Some(nu) {
+                return Err(Error::InvalidConsensusBranchId);
+            }
+            tx_branch_id
+        } else {
+            // V4 and earlier have no embedded branch ID.
+            nu.branch_id()
+                .and_then(|cbid| zcash_protocol::consensus::BranchId::try_from(cbid).ok())
+                .ok_or(Error::InvalidConsensusBranchId)?
+        };
 
         Self::from_transaction_with_branch_id(tx, branch_id, all_previous_outputs)
     }

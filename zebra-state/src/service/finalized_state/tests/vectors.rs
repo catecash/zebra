@@ -81,7 +81,7 @@ fn custom_genesis_unspendable_outputs_survive_reopen() {
         )
         .unwrap();
     let expected = state.db.finalized_value_pool();
-    assert!(expected.transparent_amount().is_zero());
+    assert_eq!(expected.pools()[0], 0);
     assert!(
         expected.nsm_amount().is_zero(),
         "the configured seed starts at NU7, not its parent"
@@ -201,7 +201,7 @@ async fn v28_cache_is_reused_with_legacy_value_pools() {
     // Commit real blocks to a persistent v28 database, then encode its pool records at v28 widths.
     let legacy_block_info = |info: &BlockInfo| {
         let mut bytes = [0; 52];
-        bytes[..48].copy_from_slice(&info.value_pools().to_bytes()[..48]);
+        bytes[..48].copy_from_slice(&info.value_pools().as_bytes()[..48]);
         bytes[48..].copy_from_slice(&info.size().to_le_bytes());
         bytes
     };
@@ -228,7 +228,7 @@ async fn v28_cache_is_reused_with_legacy_value_pools() {
     let expected_tip_hash = state.db.finalized_tip_hash();
     let expected_pools = state.db.finalized_value_pool();
     let expected_info = state.db.block_info(Height(1).into()).unwrap();
-    let legacy_pools: [u8; 48] = expected_pools.to_bytes()[..48].try_into().unwrap();
+    let legacy_pools: [u8; 48] = expected_pools.as_bytes()[..48].try_into().unwrap();
     state
         .db
         .put_cf(
@@ -237,7 +237,7 @@ async fn v28_cache_is_reused_with_legacy_value_pools() {
             legacy_pools,
         )
         .unwrap();
-    assert!(!expected_pools.transparent_amount().is_zero());
+    assert_ne!(expected_pools.pools()[0], 0);
     drop(state);
 
     // Startup cleanup must not remove the cache before the upgrader has a chance to reuse it.

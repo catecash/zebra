@@ -1,0 +1,22 @@
+# Miner node for the local two-node Catecash devnet rehearsal.
+# Run from the repository root, after starting catecash-devnet-peer.toml.
+
+[network]
+network = "CatecashDevnet"
+listen_addr = "127.0.0.1:34343"
+initial_testnet_peers = ["127.0.0.1:34344"]
+peerset_initial_target_size = 1
+cache_dir = false
+
+[state]
+cache_dir = "target/catecash-devnet-miner-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34342"
+enable_cookie_auth = false
+
+[mining]
+# Valid devnet test address with no known private key. Replace it with an
+# address you control before testing spendable coinbase rewards.
+miner_address = "yPeC241BhV8S3oRB58xPobSFzJXkhYxwhKK"
+internal_miner = true

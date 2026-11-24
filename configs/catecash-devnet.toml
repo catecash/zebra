@@ -1,0 +1,11 @@
+# Catecash local development network. Its consensus identity is fixed in code.
+# It is not a production chain or a public-mining profile.
+
+[network]
+network = "CatecashDevnet"
+listen_addr = "127.0.0.1:34343"
+initial_testnet_peers = []
+cache_dir = false
+
+[rpc]
+listen_addr = "127.0.0.1:34342"

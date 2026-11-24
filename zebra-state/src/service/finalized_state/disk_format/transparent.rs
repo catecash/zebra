@@ -5,7 +5,7 @@
 //! [`crate::constants::state_database_format_version_in_code()`] must be incremented
 //! each time the database format (column, serialization, etc) changes.
 
-use std::{cmp::max, collections::HashMap, fmt::Debug};
+use std::{cmp::max, collections::HashMap, fmt::Debug, marker::PhantomData};
 
 use zebra_chain::{
     amount::{self, Amount, Constraint, NegativeAllowed, NonNegative},
@@ -22,6 +22,28 @@ use crate::service::finalized_state::disk_format::{
 
 #[cfg(any(test, feature = "proptest-impl"))]
 use proptest_derive::Arbitrary;
+
+#[cfg(any(test, feature = "proptest-impl"))]
+fn serialize_wide_balance<S: serde::Serializer>(
+    value: &i128,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match i64::try_from(*value) {
+        Ok(narrow) => serializer.serialize_i64(narrow),
+        Err(_) => serializer.serialize_str(&value.to_string()),
+    }
+}
+
+#[cfg(any(test, feature = "proptest-impl"))]
+fn serialize_wide_received<S: serde::Serializer>(
+    value: &u128,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match u64::try_from(*value) {
+        Ok(narrow) => serializer.serialize_u64(narrow),
+        Err(_) => serializer.serialize_str(&value.to_string()),
+    }
+}
 
 /// Transparent balances are stored as an 8 byte integer on disk.
 pub const BALANCE_DISK_BYTES: usize = 8;
@@ -159,13 +181,24 @@ pub type AddressLocation = OutputLocation;
 )]
 pub struct AddressBalanceLocationInner<C: Constraint + Copy + std::fmt::Debug> {
     /// The total balance of all UTXOs sent to an address.
-    balance: Amount<C>,
+    #[cfg_attr(
+        any(test, feature = "proptest-impl"),
+        serde(serialize_with = "serialize_wide_balance")
+    )]
+    balance: i128,
 
     /// The total balance of all spent and unspent outputs sent to an address.
-    received: u64,
+    #[cfg_attr(
+        any(test, feature = "proptest-impl"),
+        serde(serialize_with = "serialize_wide_received")
+    )]
+    received: u128,
 
     /// The location of the first [`transparent::Output`] sent to an address.
     location: AddressLocation,
+
+    #[cfg_attr(any(test, feature = "proptest-impl"), serde(skip))]
+    marker: PhantomData<C>,
 }
 
 impl<C: Constraint + Copy + std::fmt::Debug> AddressBalanceLocationInner<C> {
@@ -175,29 +208,30 @@ impl<C: Constraint + Copy + std::fmt::Debug> AddressBalanceLocationInner<C> {
     /// The returned value has a zero initial balance and received balance.
     pub(crate) fn new(first_output: OutputLocation) -> Self {
         Self {
-            balance: Amount::zero(),
+            balance: 0,
             received: 0,
             location: first_output,
+            marker: PhantomData,
         }
     }
 
     /// Returns the current balance for the address.
-    pub fn balance(&self) -> Amount<C> {
+    pub fn balance(&self) -> i128 {
         self.balance
     }
 
     /// Returns the current received balance for the address.
-    pub fn received(&self) -> u64 {
+    pub fn received(&self) -> u128 {
         self.received
     }
 
     /// Returns a mutable reference to the current balance for the address.
-    pub fn balance_mut(&mut self) -> &mut Amount<C> {
+    pub fn balance_mut(&mut self) -> &mut i128 {
         &mut self.balance
     }
 
     /// Returns a mutable reference to the current received balance for the address.
-    pub fn received_mut(&mut self) -> &mut u64 {
+    pub fn received_mut(&mut self) -> &mut u128 {
         &mut self.received
     }
 
@@ -218,41 +252,47 @@ impl<C: Constraint + Copy + std::fmt::Debug> AddressBalanceLocationInner<C> {
     pub fn receive_output(
         &mut self,
         unspent_output: &transparent::Output,
-    ) -> Result<(), amount::Error> {
-        self.balance = (self
+    ) -> Result<(), &'static str> {
+        self.balance = self
             .balance
-            .zatoshis()
-            .checked_add(unspent_output.value().zatoshis()))
-        .expect("ops handling taddr balances must not overflow")
-        .try_into()?;
-        self.received = self.received.saturating_add(unspent_output.value().into());
+            .checked_add(i128::from(unspent_output.value().zatoshis()))
+            .ok_or("transparent address balance overflow")?;
+        self.received = self
+            .received
+            .checked_add(u128::from(u64::from(unspent_output.value())))
+            .ok_or("transparent address received total overflow")?;
         Ok(())
     }
 
     /// Updates the current balance by subtracting the supplied output's value.
     #[allow(clippy::unwrap_in_result)]
-    pub fn spend_output(
-        &mut self,
-        spent_output: &transparent::Output,
-    ) -> Result<(), amount::Error> {
-        self.balance = (self
+    pub fn spend_output(&mut self, spent_output: &transparent::Output) -> Result<(), &'static str> {
+        self.balance = self
             .balance
-            .zatoshis()
-            .checked_sub(spent_output.value().zatoshis()))
-        .expect("ops handling taddr balances must not underflow")
-        .try_into()?;
+            .checked_sub(i128::from(spent_output.value().zatoshis()))
+            .ok_or("transparent address balance underflow")?;
 
         Ok(())
     }
 }
 
 impl<C: Constraint + Copy + std::fmt::Debug> std::ops::Add for AddressBalanceLocationInner<C> {
-    type Output = Result<Self, amount::Error>;
+    type Output = Result<Self, &'static str>;
 
     fn add(self, rhs: Self) -> Self::Output {
+        let balance = self
+            .balance
+            .checked_add(rhs.balance)
+            .ok_or("transparent address balance overflow")?;
+        if *C::valid_range().start() == 0 && balance < 0 {
+            return Err("transparent address balance became negative");
+        }
         Ok(AddressBalanceLocationInner {
-            balance: (self.balance + rhs.balance)?,
-            received: self.received.saturating_add(rhs.received),
+            balance,
+            received: self
+                .received
+                .checked_add(rhs.received)
+                .ok_or("transparent address received total overflow")?,
             // Keep in mind that `AddressBalanceLocationChange` reuses this type
             // (AddressBalanceLocationInner) and this addition method. The
             // `block_info_and_address_received` database upgrade uses the
@@ -266,6 +306,7 @@ impl<C: Constraint + Copy + std::fmt::Debug> std::ops::Add for AddressBalanceLoc
             // location for an address; and using `min()` will work if a
             // non-canonical location is added.
             location: self.location.min(rhs.location),
+            marker: PhantomData,
         })
     }
 }
@@ -332,7 +373,7 @@ impl std::ops::DerefMut for AddressBalanceLocationChange {
 }
 
 impl std::ops::Add for AddressBalanceLocationChange {
-    type Output = Result<Self, amount::Error>;
+    type Output = Result<Self, &'static str>;
 
     fn add(self, rhs: Self) -> Self::Output {
         (self.0 + rhs.0).map(Self)
@@ -385,7 +426,7 @@ impl std::ops::DerefMut for AddressBalanceLocation {
 }
 
 impl std::ops::Add for AddressBalanceLocation {
-    type Output = Result<Self, amount::Error>;
+    type Output = Result<Self, &'static str>;
 
     fn add(self, rhs: Self) -> Self::Output {
         (self.0 + rhs.0).map(Self)
@@ -621,6 +662,15 @@ fn address_variant(address: &transparent::Address) -> u8 {
         // TEX address variants
         (Mainnet, Tex { .. }) => 4,
         (Testnet | Regtest, Tex { .. }) => 5,
+        (CatecashDevnet, PayToPublicKeyHash { .. }) => 6,
+        (CatecashDevnet, PayToScriptHash { .. }) => 7,
+        (CatecashDevnet, Tex { .. }) => 8,
+        (CatecashMainnet, PayToPublicKeyHash { .. }) => 9,
+        (CatecashMainnet, PayToScriptHash { .. }) => 10,
+        (CatecashMainnet, Tex { .. }) => 11,
+        (CatecashTestnet, PayToPublicKeyHash { .. }) => 12,
+        (CatecashTestnet, PayToScriptHash { .. }) => 13,
+        (CatecashTestnet, Tex { .. }) => 14,
     }
 }
 
@@ -643,16 +693,22 @@ impl FromDisk for transparent::Address {
         let address_variant = address_variant[0];
         let hash_bytes = hash_bytes.try_into().unwrap();
 
-        let network = if address_variant < 2 {
-            NetworkKind::Mainnet
-        } else {
-            NetworkKind::Testnet
+        let network = match address_variant {
+            0 | 1 | 4 => NetworkKind::Mainnet,
+            6..=8 => NetworkKind::CatecashDevnet,
+            9..=11 => NetworkKind::CatecashMainnet,
+            12..=14 => NetworkKind::CatecashTestnet,
+            _ => NetworkKind::Testnet,
         };
 
-        if address_variant % 2 == 0 {
-            transparent::Address::from_pub_key_hash(network, hash_bytes)
-        } else {
-            transparent::Address::from_script_hash(network, hash_bytes)
+        match address_variant {
+            0 | 2 | 6 | 9 | 12 => transparent::Address::from_pub_key_hash(network, hash_bytes),
+            1 | 3 | 7 | 10 | 13 => transparent::Address::from_script_hash(network, hash_bytes),
+            4 | 5 | 8 | 11 | 14 => transparent::Address::Tex {
+                network_kind: network,
+                validating_key_hash: hash_bytes,
+            },
+            _ => panic!("unknown transparent address variant"),
         }
     }
 }
@@ -754,22 +810,19 @@ impl FromDisk for OutputLocation {
 }
 
 impl<C: Constraint + Copy + std::fmt::Debug> IntoDisk for AddressBalanceLocationInner<C> {
-    type Bytes = [u8; BALANCE_DISK_BYTES + OUTPUT_LOCATION_DISK_BYTES + size_of::<u64>()];
+    type Bytes = Vec<u8>;
 
     fn as_bytes(&self) -> Self::Bytes {
-        let balance_bytes = self.balance().as_bytes().to_vec();
+        let balance_bytes = self.balance().to_le_bytes().to_vec();
         let address_location_bytes = self.address_location().as_bytes().to_vec();
         let received_bytes = self.received().to_le_bytes().to_vec();
 
-        [balance_bytes, address_location_bytes, received_bytes]
-            .concat()
-            .try_into()
-            .unwrap()
+        [balance_bytes, address_location_bytes, received_bytes].concat()
     }
 }
 
 impl IntoDisk for AddressBalanceLocation {
-    type Bytes = [u8; BALANCE_DISK_BYTES + OUTPUT_LOCATION_DISK_BYTES + size_of::<u64>()];
+    type Bytes = Vec<u8>;
 
     fn as_bytes(&self) -> Self::Bytes {
         self.0.as_bytes()
@@ -777,7 +830,7 @@ impl IntoDisk for AddressBalanceLocation {
 }
 
 impl IntoDisk for AddressBalanceLocationChange {
-    type Bytes = [u8; BALANCE_DISK_BYTES + OUTPUT_LOCATION_DISK_BYTES + size_of::<u64>()];
+    type Bytes = Vec<u8>;
 
     fn as_bytes(&self) -> Self::Bytes {
         self.0.as_bytes()
@@ -786,16 +839,37 @@ impl IntoDisk for AddressBalanceLocationChange {
 
 impl<C: Constraint + Copy + std::fmt::Debug> FromDisk for AddressBalanceLocationInner<C> {
     fn from_bytes(disk_bytes: impl AsRef<[u8]>) -> Self {
-        let (balance_bytes, rest) = disk_bytes.as_ref().split_at(BALANCE_DISK_BYTES);
-        let (address_location_bytes, rest) = rest.split_at(BALANCE_DISK_BYTES);
-        let (received_bytes, _) = rest.split_at_checked(size_of::<u64>()).unwrap_or_default();
-
-        let balance = Amount::from_bytes(balance_bytes.try_into().unwrap()).unwrap();
-        let address_location = AddressLocation::from_bytes(address_location_bytes);
-        // # Backwards Compatibility
-        //
-        // If the value is missing a `received` field, default to 0.
-        let received = u64::from_le_bytes(received_bytes.try_into().unwrap_or_default());
+        let bytes = disk_bytes.as_ref();
+        let (balance, address_location, received) = if bytes.len() == 40 {
+            let balance =
+                i128::from_le_bytes(bytes[..16].try_into().expect("wide balance has 16 bytes"));
+            let location = AddressLocation::from_bytes(&bytes[16..24]);
+            let received = u128::from_le_bytes(
+                bytes[24..40]
+                    .try_into()
+                    .expect("wide received has 16 bytes"),
+            );
+            (balance, location, received)
+        } else {
+            assert!(
+                bytes.len() == 16 || bytes.len() == 24,
+                "invalid legacy address balance length"
+            );
+            let (balance_bytes, rest) = bytes.split_at(BALANCE_DISK_BYTES);
+            let (location_bytes, rest) = rest.split_at(OUTPUT_LOCATION_DISK_BYTES);
+            let balance = i128::from(i64::from_le_bytes(
+                balance_bytes
+                    .try_into()
+                    .expect("legacy balance has 8 bytes"),
+            ));
+            let location = AddressLocation::from_bytes(location_bytes);
+            let received = u128::from(u64::from_le_bytes(rest.try_into().unwrap_or_default()));
+            (balance, location, received)
+        };
+        assert!(
+            *C::valid_range().start() != 0 || balance >= 0,
+            "stored address balance must be nonnegative"
+        );
 
         let mut address_balance_location = Self::new(address_location);
         *address_balance_location.balance_mut() = balance;
@@ -885,5 +959,24 @@ impl FromDisk for AddressTransaction {
         let transaction_location = TransactionLocation::from_bytes(transaction_location_bytes);
 
         AddressTransaction::new(address_location, transaction_location)
+    }
+}
+
+#[cfg(test)]
+mod catecash_tests {
+    use super::*;
+
+    #[test]
+    fn catecash_address_keys_do_not_overlap_zcash_testnet() {
+        let hash = [42; 20];
+        let catecash = transparent::Address::from_pub_key_hash(NetworkKind::CatecashDevnet, hash);
+        let zcash = transparent::Address::from_pub_key_hash(NetworkKind::Testnet, hash);
+
+        assert_ne!(catecash.as_bytes(), zcash.as_bytes());
+        assert_eq!(catecash.as_bytes()[0], 6);
+        assert_eq!(
+            transparent::Address::from_bytes(catecash.as_bytes()),
+            catecash
+        );
     }
 }

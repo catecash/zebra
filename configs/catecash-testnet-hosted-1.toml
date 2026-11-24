@@ -1,0 +1,22 @@
+# Private hosted testnet seed and miner. P2P binds only to the
+# Hetzner private network; the public interface exposes SSH only.
+[network]
+network = "CatecashTestnet"
+listen_addr = "10.57.1.1:34353"
+initial_mainnet_peers = []
+initial_testnet_peers = ["10.57.1.2:34353"]
+peerset_initial_target_size = 1
+max_connections_per_ip = 2
+cache_dir = false
+
+[state]
+cache_dir = "/var/lib/catecash-testnet"
+
+[rpc]
+listen_addr = "127.0.0.1:34352"
+enable_cookie_auth = false
+
+[mining]
+# Bootstrap payout only. The external rotation controller overwrites this on hosted node 1.
+miner_address = "EMDhJhRcLFL7ccnj53pbSnyB3eQRyW9dcH4"
+internal_miner = true

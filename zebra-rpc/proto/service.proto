@@ -125,6 +125,13 @@ message AddressList {
 }
 message Balance {
     int64 valueZat = 1;
+    // Always present on Catecash. Its fixed64 halves encode the exact
+    // nonnegative 128-bit balance. Zcash continues to use valueZat.
+    WideBalance valueZatWide = 2;
+}
+message WideBalance {
+    fixed64 low = 1;
+    fixed64 high = 2;
 }
 
 // The a shortened transaction ID is the prefix in big-endian (hex) format

@@ -10,7 +10,11 @@ use zebra_chain::{
     subtree::{NoteCommitmentSubtreeData, NoteCommitmentSubtreeIndex},
     transaction::{self, Transaction},
     transparent,
-    value_balance::ValueBalance,
+    value_balance::{
+        network::NetworkChainValuePools,
+        wide::{WideValueBalance, CATECASH_MAX_SCHEDULED_SUPPLY_ZAT},
+        ValueBalance,
+    },
 };
 
 use crate::service::finalized_state::{
@@ -178,6 +182,7 @@ fn roundtrip_address_balance_location() {
     proptest!(
         |(mut val in any::<AddressBalanceLocation>())| {
             val.height_mut().0 %= MAX_ON_DISK_HEIGHT.0 + 1;
+            *val.balance_mut() = val.balance().saturating_abs();
             assert_value_properties(val)
         }
     );
@@ -499,6 +504,33 @@ fn roundtrip_block_info() {
             assert_value_properties(BlockInfo::new(value_pools, size))
         }
     );
+}
+
+#[test]
+fn catecash_wide_pool_and_address_records_roundtrip() {
+    let reward = i128::from(zebra_chain::parameters::catecash::BLOCK_REWARD_ZAT);
+    let pools = NetworkChainValuePools::Catecash(
+        WideValueBalance::new(
+            [4_201 * reward, 0, 0, 0, 0, 0, 0],
+            CATECASH_MAX_SCHEDULED_SUPPLY_ZAT,
+        )
+        .unwrap(),
+    );
+    let pool_bytes = pools.as_bytes();
+    assert_eq!(pool_bytes.len(), 116);
+    assert_eq!(NetworkChainValuePools::from_bytes(&pool_bytes), pools);
+
+    let info = BlockInfo::new(pools, 123);
+    assert_eq!(info.as_bytes().len(), 120);
+    assert_eq!(BlockInfo::from_bytes(info.as_bytes()), info);
+
+    let location = OutputLocation::from_usize(Height(1), 0, 0);
+    let mut address = AddressBalanceLocation::new(location);
+    *address.balance_mut() = i128::from(i64::MAX) + 1;
+    *address.received_mut() = u128::from(u64::MAX) + 1;
+    let bytes = address.as_bytes();
+    assert_eq!(bytes.len(), 40);
+    assert_eq!(AddressBalanceLocation::from_bytes(bytes), address);
 }
 
 /// Read legacy records and preserve the v28 prefix when appending the NSM reserve.

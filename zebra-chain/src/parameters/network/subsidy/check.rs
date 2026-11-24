@@ -55,6 +55,22 @@ pub fn subsidy_is_valid(
 ) -> Result<DeferredPoolBalanceChange, CoinbaseTransactionError> {
     let height = block.coinbase_height().ok_or(SubsidyError::NoCoinbase)?;
 
+    if net.is_catecash() {
+        // Catecash has no founder or funding-stream allocations. Its height-zero
+        // transaction must have no spendable output; all later rewards are miners'.
+        if height == Height::MIN
+            && block.transactions.first().is_some_and(|coinbase| {
+                coinbase
+                    .outputs()
+                    .iter()
+                    .any(|output| !output.value().is_zero())
+            })
+        {
+            return Err(SubsidyError::InvalidMinerFees.into());
+        }
+        return Ok(DeferredPoolBalanceChange::zero());
+    }
+
     // A zero subsidy removes proportional payouts, but not fixed lockbox disbursements.
     if expected_block_subsidy.is_zero()
         && Some(height) != NetworkUpgrade::Nu6_1.activation_height(net)
@@ -267,7 +283,7 @@ pub fn miner_fees_are_valid(
     // input.
     //
     // > [NU6 onward] The total output of a coinbase transaction MUST be equal to its total input.
-    if if NetworkUpgrade::current(network, height) < NetworkUpgrade::Nu6 {
+    if if !network.is_catecash() && NetworkUpgrade::current(network, height) < NetworkUpgrade::Nu6 {
         total_output_value > total_input_value
     } else {
         total_output_value != total_input_value

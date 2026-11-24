@@ -11,6 +11,274 @@ use super::*;
 use Network::*;
 use NetworkUpgrade::*;
 
+#[test]
+fn catecash_mainnet_candidate_identity_is_separate() {
+    use zcash_address::{
+        unified::{Address as UnifiedAddress, Encoding, MetadataItem, Receiver, Revision, Uitem},
+        ToAddress,
+    };
+    use zcash_protocol::consensus::{BranchId, NetworkConstants, NetworkType};
+
+    let contract: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../docs/catecash/mainnet-network-candidate.json"
+    ))
+    .expect("mainnet candidate contract parses");
+    let network = Network::CatecashMainnet;
+    let other_networks = [
+        Network::Mainnet,
+        Network::new_default_testnet(),
+        Network::CatecashDevnet,
+    ];
+
+    assert_eq!(contract["network"], network.to_string());
+    assert_eq!(contract["genesis_hash"], network.genesis_hash().to_string());
+    assert_eq!(contract["p2p_magic"], hex::encode(network.magic().0));
+    assert_eq!(contract["p2p_port"], network.default_port());
+    assert_eq!(contract["pow_limit"], network::catecash_mainnet::POW_LIMIT);
+    assert_eq!(
+        network.checkpoint_list().hash(block::Height::MIN),
+        Some(network.genesis_hash())
+    );
+    assert_eq!(NetworkUpgrade::current(&network, block::Height(1)), Nu7);
+    assert_eq!(
+        ConsensusBranchId::current(&network, block::Height(1)),
+        Some(ConsensusBranchId::CATECASH_MAINNET_CANDIDATE)
+    );
+    assert_eq!(
+        u32::from(BranchId::for_height(&network, 1u32.into())),
+        u32::from(ConsensusBranchId::CATECASH_MAINNET_CANDIDATE)
+    );
+    assert_eq!(
+        contract["transaction_branch_id"],
+        format!(
+            "{:08x}",
+            u32::from(ConsensusBranchId::CATECASH_MAINNET_CANDIDATE)
+        )
+    );
+    assert_eq!(
+        contract["coin_type"],
+        NetworkType::CatecashMainnet.coin_type()
+    );
+    assert_eq!(
+        contract["unified_address_r2_transparent_hrp"],
+        zcash_address::constants::catecash_mainnet::HRP_UNIFIED_ADDRESS_R2_TI
+    );
+    let unified_address_hrps = [
+        zcash_address::constants::catecash_devnet::HRP_UNIFIED_ADDRESS,
+        zcash_address::constants::catecash_devnet::HRP_UNIFIED_ADDRESS_R2,
+        zcash_address::constants::catecash_devnet::HRP_UNIFIED_ADDRESS_R2_TI,
+        zcash_address::constants::catecash_mainnet::HRP_UNIFIED_ADDRESS,
+        zcash_address::constants::catecash_mainnet::HRP_UNIFIED_ADDRESS_R2,
+        zcash_address::constants::catecash_mainnet::HRP_UNIFIED_ADDRESS_R2_TI,
+        zcash_address::constants::catecash_testnet::HRP_UNIFIED_ADDRESS,
+        zcash_address::constants::catecash_testnet::HRP_UNIFIED_ADDRESS_R2,
+        zcash_address::constants::catecash_testnet::HRP_UNIFIED_ADDRESS_R2_TI,
+    ];
+    assert_eq!(
+        unified_address_hrps.len(),
+        unified_address_hrps
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .len(),
+        "unified address HRPs must distinguish network and revision"
+    );
+    assert_eq!(
+        contract["transparent_p2pkh_prefix"],
+        hex::encode(network.kind().b58_pubkey_address_prefix())
+    );
+    assert_eq!(
+        contract["transparent_p2sh_prefix"],
+        hex::encode(network.kind().b58_script_address_prefix())
+    );
+    assert!(network.all_funding_streams().is_empty());
+    assert!(!network.is_a_test_network());
+
+    for other in other_networks {
+        assert_ne!(network.magic(), other.magic());
+        assert_ne!(network.genesis_hash(), other.genesis_hash());
+        assert_ne!(
+            network.kind().b58_pubkey_address_prefix(),
+            other.kind().b58_pubkey_address_prefix()
+        );
+    }
+
+    let address = zcash_address::ZcashAddress::from_transparent_p2pkh(
+        NetworkType::CatecashMainnet,
+        [0x42; 20],
+    )
+    .encode();
+    assert_eq!(address, "CaGoTLXeYqiyzhQVT2kgy1TwpTqP2okCHZX");
+    let decoded = address
+        .parse::<zcash_address::ZcashAddress>()
+        .unwrap()
+        .convert::<crate::primitives::Address>()
+        .unwrap();
+    assert_eq!(decoded.network(), NetworkKind::CatecashMainnet);
+
+    for revision in [Revision::R0, Revision::R2] {
+        let mut items = vec![
+            Uitem::Data(Receiver::P2pkh([0x42; 20])),
+            Uitem::Data(Receiver::Orchard([0x24; 43])),
+        ];
+        if revision == Revision::R2 {
+            items.push(Uitem::Metadata(MetadataItem::ExpiryHeight(1_000_000)));
+        }
+        let unified = UnifiedAddress::try_from_items(revision, items).unwrap();
+        let (decoded_network, decoded_revision, decoded_unified) =
+            UnifiedAddress::decode(&unified.encode(&NetworkType::CatecashMainnet)).unwrap();
+        assert_eq!(decoded_network, NetworkType::CatecashMainnet);
+        assert_eq!(decoded_revision, revision);
+        assert_eq!(decoded_unified, unified);
+    }
+}
+
+#[test]
+fn catecash_wallet_contract_matches_devnet_consensus() {
+    let contract: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../docs/catecash/devnet-wallet-contract.json"
+    ))
+    .expect("development wallet contract parses");
+    let network = Network::CatecashDevnet;
+
+    assert_eq!(contract["status"], "development-incomplete");
+    assert_eq!(contract["network"], network.to_string());
+    assert_eq!(contract["genesis_hash"], network::catecash::GENESIS_HASH);
+    assert_eq!(contract["p2p_magic"], hex::encode(network.magic().0));
+    assert_eq!(contract["p2p_port"], network.default_port());
+    assert_eq!(contract["first_mineable_height"], 1);
+    assert_eq!(contract["first_mineable_upgrade"], "NU7");
+    assert_eq!(NetworkUpgrade::current(&network, block::Height(1)), Nu7);
+    assert_eq!(
+        contract["transaction_branch_id"],
+        format!("{:08x}", u32::from(ConsensusBranchId::CATECASH_LAUNCH))
+    );
+    for (name, zcash) in [
+        ("zcash_mainnet", Network::Mainnet),
+        ("zcash_testnet", Network::new_default_testnet()),
+        ("zcash_regtest", Network::new_regtest(Default::default())),
+    ] {
+        assert_eq!(
+            contract["reject_genesis_hashes"][name],
+            zcash.genesis_hash().to_string()
+        );
+        assert_ne!(network.genesis_hash(), zcash.genesis_hash());
+    }
+    assert_eq!(
+        contract["reject_transaction_branch_ids"][0],
+        format!(
+            "{:08x}",
+            u32::from(Nu7.branch_id().expect("NU7 has a branch ID"))
+        )
+    );
+    let addresses = &contract["address_encodings"];
+    assert_eq!(addresses["status"], "provisional-devnet-only");
+    assert_eq!(addresses["coin_type"], 3239);
+    assert_eq!(
+        addresses["transparent_p2pkh_prefix"],
+        hex::encode(network.kind().b58_pubkey_address_prefix())
+    );
+    assert_eq!(
+        addresses["transparent_p2sh_prefix"],
+        hex::encode(network.kind().b58_script_address_prefix())
+    );
+    assert_eq!(
+        addresses["sapling_hrp"],
+        zcash_address::constants::catecash_devnet::HRP_SAPLING_PAYMENT_ADDRESS
+    );
+    assert_eq!(
+        addresses["tex_hrp"],
+        zcash_address::constants::catecash_devnet::HRP_TEX_ADDRESS
+    );
+    assert_eq!(
+        addresses["unified_address_r0_hrp"],
+        zcash_address::constants::catecash_devnet::HRP_UNIFIED_ADDRESS
+    );
+    assert_eq!(
+        addresses["transparent_p2pkh_hash_42_example"],
+        crate::transparent::Address::PayToPublicKeyHash {
+            network_kind: NetworkKind::CatecashDevnet,
+            pub_key_hash: [0x42; 20],
+        }
+        .to_string()
+    );
+    assert_eq!(contract["wallet_enabled"], false);
+}
+
+#[test]
+fn catecash_transparent_addresses_round_trip_on_their_own_network() {
+    use crate::transparent::Address;
+
+    let hash = [0x42; 20];
+    for address in [
+        Address::PayToPublicKeyHash {
+            network_kind: NetworkKind::CatecashDevnet,
+            pub_key_hash: hash,
+        },
+        Address::PayToScriptHash {
+            network_kind: NetworkKind::CatecashDevnet,
+            script_hash: hash,
+        },
+        Address::Tex {
+            network_kind: NetworkKind::CatecashDevnet,
+            validating_key_hash: hash,
+        },
+    ] {
+        let encoded = address.to_string();
+        assert_eq!(encoded.parse::<Address>().unwrap(), address);
+        let parsed = encoded.parse::<zcash_address::ZcashAddress>().unwrap();
+        let converted = parsed.convert::<crate::primitives::Address>().unwrap();
+        assert_eq!(converted.network(), NetworkKind::CatecashDevnet);
+    }
+}
+
+#[test]
+fn catecash_unified_address_revisions_round_trip() {
+    use zcash_address::unified::{Address, Encoding, MetadataItem, Receiver, Revision, Uitem};
+    use zcash_protocol::consensus::NetworkType;
+
+    for revision in [Revision::R0, Revision::R2] {
+        let mut items = vec![
+            Uitem::Data(Receiver::P2pkh([0x42; 20])),
+            Uitem::Data(Receiver::Orchard([0x24; 43])),
+        ];
+        if revision == Revision::R2 {
+            items.push(Uitem::Metadata(MetadataItem::ExpiryHeight(1_000_000)));
+        }
+        let address = Address::try_from_items(revision, items).unwrap();
+        let encoded = address.encode(&NetworkType::CatecashDevnet);
+        let (network, decoded_revision, decoded) = Address::decode(&encoded).unwrap();
+        assert_eq!(network, NetworkType::CatecashDevnet);
+        assert_eq!(decoded_revision, revision);
+        assert_eq!(decoded, address);
+    }
+}
+
+#[test]
+fn catecash_sapling_address_round_trips() {
+    use zcash_address::ToAddress;
+    use zcash_protocol::consensus::NetworkType;
+
+    let zcash =
+        "ztestsapling1xl84ekz6stprmvrp39s77mf9t953nqjndwlcjtzfrr3cgjjez87639xm4u9pfuvylrhecet38rq"
+            .parse::<zcash_address::ZcashAddress>()
+            .unwrap();
+    let crate::primitives::Address::Sapling { address, .. } =
+        zcash.convert::<crate::primitives::Address>().unwrap()
+    else {
+        panic!("fixture is a Sapling address");
+    };
+    let catecash =
+        zcash_address::ZcashAddress::from_sapling(NetworkType::CatecashDevnet, address.to_bytes())
+            .encode();
+    assert!(catecash.starts_with("cashdevsapling1"));
+    let decoded = catecash
+        .parse::<zcash_address::ZcashAddress>()
+        .unwrap()
+        .convert::<crate::primitives::Address>()
+        .unwrap();
+    assert_eq!(decoded.network(), NetworkKind::CatecashDevnet);
+}
+
 /// Check that the activation heights and network upgrades are unique.
 #[test]
 fn activation_bijective() {
@@ -236,6 +504,79 @@ fn nu7_branch_id_and_transaction_formats() {
             Err(crate::Error::InvalidConsensusBranchId)
         ));
     }
+}
+
+#[test]
+fn catecash_branch_id_parses_and_signs_with_nu7_rules() {
+    use std::sync::Arc;
+
+    use crate::{
+        serialization::{ZcashDeserializeInto, ZcashSerialize},
+        transaction::{HashType, Transaction},
+    };
+    use zcash_protocol::consensus::BranchId;
+
+    let id = ConsensusBranchId::CATECASH_LAUNCH;
+    assert_eq!(u32::from(id), 0xea3b_eeb4);
+    assert_eq!(BranchId::try_from(id).unwrap(), BranchId::Catecash);
+    assert_eq!(NetworkUpgrade::try_from(u32::from(id)).unwrap(), Nu7);
+    assert_ne!(id, Nu7.branch_id().unwrap());
+
+    // V6 stores the branch ID after the version and version group ID.
+    let mut bytes = hex::decode("0600008098b684d8d90a19770000000001000000000000000000").unwrap();
+    bytes[8..12].copy_from_slice(&u32::from(id).to_le_bytes());
+    let tx: Transaction = bytes.as_slice().zcash_deserialize_into().unwrap();
+    assert_eq!(tx.network_upgrade(), Some(Nu7));
+    assert_eq!(u32::from(tx.consensus_branch_id()), u32::from(id));
+    assert_eq!(tx.zcash_serialize_to_vec().unwrap(), bytes);
+    assert_eq!(
+        tx.sighash(Nu7, HashType::ALL, Arc::new(Vec::new()), None)
+            .unwrap()
+            .0,
+        tx.hash().0
+    );
+}
+
+#[test]
+fn catecash_block_rejects_zcash_branch_id() {
+    use std::sync::Arc;
+
+    use crate::{
+        amount::Amount,
+        serialization::{ZcashDeserializeInto, ZcashSerialize},
+        transaction::{LockTime, Transaction},
+        transparent::{Input, Output, Script},
+    };
+
+    let network = Network::CatecashDevnet;
+    let zcash = Transaction::test_v6(
+        Nu7,
+        vec![Input::Coinbase {
+            height: block::Height(1),
+            data: vec![0],
+            sequence: u32::MAX,
+        }],
+        vec![Output {
+            value: Amount::zero(),
+            lock_script: Script::new(&[]),
+        }],
+        LockTime::unlocked(),
+        block::Height(1),
+    );
+    let mut bytes = zcash.zcash_serialize_to_vec().unwrap();
+    bytes[8..12].copy_from_slice(&u32::from(ConsensusBranchId::CATECASH_LAUNCH).to_le_bytes());
+    let catecash: Transaction = bytes.as_slice().zcash_deserialize_into().unwrap();
+    let mut block: block::Block = zebra_test::vectors::BLOCK_MAINNET_GENESIS_BYTES
+        .zcash_deserialize_into()
+        .unwrap();
+    block.transactions = vec![Arc::new(zcash)];
+    assert!(block
+        .check_transaction_network_upgrade_consistency(&network)
+        .is_err());
+    block.transactions = vec![Arc::new(catecash)];
+    assert!(block
+        .check_transaction_network_upgrade_consistency(&network)
+        .is_ok());
 }
 
 /// Public Testnet changes consensus and SDK transaction signing together at ZIP 259's height.

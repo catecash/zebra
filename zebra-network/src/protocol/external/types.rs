@@ -158,7 +158,13 @@ impl Version {
             (Mainnet, Nu7) => 170_190,
 
             // It should be fine to reject peers with earlier network protocol versions on custom testnets for now.
-            (Testnet(_), _) => CURRENT_NETWORK_PROTOCOL_VERSION.0,
+            (
+                Testnet(_)
+                | Network::CatecashDevnet
+                | Network::CatecashMainnet
+                | Network::CatecashTestnet,
+                _,
+            ) => CURRENT_NETWORK_PROTOCOL_VERSION.0,
 
             #[cfg(zcash_unstable = "zfuture")]
             (Mainnet, ZFuture) => {

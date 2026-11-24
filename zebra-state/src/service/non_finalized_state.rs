@@ -1120,17 +1120,17 @@ impl NonFinalizedState {
         );
 
         if let Some(best_chain) = self.best_chain() {
-            let value_pools = best_chain.chain_value_pools;
+            let value_pools = best_chain.chain_value_pools.pools();
             metrics::gauge!("zcash.pool.value.zatoshis", "name" => "transparent")
-                .set(u64::from(value_pools.transparent_amount()) as f64);
+                .set(value_pools[0] as f64);
             metrics::gauge!("zcash.pool.value.zatoshis", "name" => "sprout")
-                .set(u64::from(value_pools.sprout_amount()) as f64);
+                .set(value_pools[1] as f64);
             metrics::gauge!("zcash.pool.value.zatoshis", "name" => "sapling")
-                .set(u64::from(value_pools.sapling_amount()) as f64);
+                .set(value_pools[2] as f64);
             metrics::gauge!("zcash.pool.value.zatoshis", "name" => "orchard")
-                .set(u64::from(value_pools.orchard_amount()) as f64);
+                .set(value_pools[3] as f64);
             metrics::gauge!("zcash.pool.value.zatoshis", "name" => "ironwood")
-                .set(u64::from(value_pools.ironwood_amount()) as f64);
+                .set(value_pools[5] as f64);
 
             metrics::gauge!("zcash.pool.notes.created", "name" => "sprout")
                 .set(best_chain.sprout_note_commitment_tree_for_tip().count() as f64);

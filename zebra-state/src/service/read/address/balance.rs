@@ -33,7 +33,7 @@ pub fn transparent_balance(
     chain: Option<Arc<Chain>>,
     db: &ZebraDb,
     addresses: HashSet<transparent::Address>,
-) -> Result<(Amount<NonNegative>, u64), BoxError> {
+) -> Result<(i128, u128), BoxError> {
     let mut balance_result = finalized_transparent_balance(db, &addresses);
 
     // Retry the finalized balance query if it was interrupted by a finalizing block
@@ -69,7 +69,7 @@ pub fn transparent_balance(
 fn finalized_transparent_balance(
     db: &ZebraDb,
     addresses: &HashSet<transparent::Address>,
-) -> Result<((Amount<NonNegative>, u64), Option<Height>), BoxError> {
+) -> Result<((i128, u128), Option<Height>), BoxError> {
     // # Correctness
     //
     // The StateService can commit additional blocks while we are querying address balances.
@@ -99,7 +99,7 @@ fn chain_transparent_balance_change(
     chain: Arc<Chain>,
     addresses: &HashSet<transparent::Address>,
     finalized_tip: Option<Height>,
-) -> (Amount<NegativeAllowed>, u64) {
+) -> (i128, u128) {
     // # Correctness
     //
     // Find the balance adjustment that corrects for overlapping finalized and non-finalized blocks.
@@ -119,7 +119,7 @@ fn chain_transparent_balance_change(
     // If we've already committed this entire chain, ignore its balance changes.
     // This is more likely if the non-finalized state is just getting started.
     if chain_tip < required_chain_root {
-        return (Amount::zero(), 0);
+        return (0, 0);
     }
 
     // Correctness: the finalized balance already includes the blocks below the required root,
@@ -130,12 +130,17 @@ fn chain_transparent_balance_change(
 /// Add the supplied finalized and non-finalized balances together,
 /// and return the result.
 fn apply_balance_change(
-    (finalized_balance, finalized_received): (Amount<NonNegative>, u64),
-    (chain_balance_change, chain_received_change): (Amount<NegativeAllowed>, u64),
-) -> amount::Result<(Amount<NonNegative>, u64)> {
-    let balance = finalized_balance.constrain()? + chain_balance_change;
-    // Addresses could receive more than the max money supply by sending to themselves,
-    // use u64::MAX if the addition overflows.
-    let received = finalized_received.saturating_add(chain_received_change);
-    Ok((balance?.constrain()?, received))
+    (finalized_balance, finalized_received): (i128, u128),
+    (chain_balance_change, chain_received_change): (i128, u128),
+) -> Result<(i128, u128), &'static str> {
+    let balance = finalized_balance
+        .checked_add(chain_balance_change)
+        .ok_or("address balance overflow")?;
+    if balance < 0 {
+        return Err("address balance became negative");
+    }
+    let received = finalized_received
+        .checked_add(chain_received_change)
+        .ok_or("address received total overflow")?;
+    Ok((balance, received))
 }

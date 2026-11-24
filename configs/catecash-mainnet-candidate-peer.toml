@@ -1,0 +1,16 @@
+# Local-only Catecash mainnet candidate peer. This is not a public launch config.
+
+[network]
+network = "CatecashMainnet"
+listen_addr = "127.0.0.1:34334"
+initial_mainnet_peers = []
+initial_testnet_peers = []
+peerset_initial_target_size = 1
+cache_dir = false
+
+[state]
+cache_dir = "target/catecash-mainnet-candidate-peer-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34335"
+enable_cookie_auth = false

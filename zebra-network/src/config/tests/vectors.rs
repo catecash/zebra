@@ -16,6 +16,34 @@ use crate::{
 };
 
 #[test]
+fn catecash_devnet_uses_its_dns_seed_only_when_defaults_are_present() {
+    let default_devnet = Config {
+        network: Network::CatecashDevnet,
+        ..Config::default()
+    };
+    assert_eq!(
+        default_devnet.initial_peer_hostnames(),
+        ["devnet.catecash.com:34343".to_string()].into()
+    );
+
+    let configured_devnet: Config = toml::from_str("network = 'CatecashDevnet'").unwrap();
+    assert_eq!(
+        configured_devnet.initial_peer_hostnames(),
+        default_devnet.initial_peer_hostnames()
+    );
+
+    let isolated_devnet: Config =
+        toml::from_str("network = 'CatecashDevnet'\ninitial_testnet_peers = []").unwrap();
+    assert!(isolated_devnet.initial_peer_hostnames().is_empty());
+
+    let mainnet_candidate = Config {
+        network: Network::CatecashMainnet,
+        ..Config::default()
+    };
+    assert!(mainnet_candidate.initial_peer_hostnames().is_empty());
+}
+
+#[test]
 fn parse_config_listen_addr() {
     let _init_guard = zebra_test::init();
 

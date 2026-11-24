@@ -8,6 +8,7 @@ use zebra_chain::{
     amount::Amount,
     block::{Block, Height},
     fmt::TypeNameToDebug,
+    parameters::Network,
     serialization::ZcashDeserializeInto,
     transaction::{self, LockTime, Transaction},
     transparent,
@@ -52,8 +53,12 @@ fn accept_shielded_mature_coinbase_utxo_spend() {
         spend_height: min_spend_height,
     };
 
-    let result =
-        check::utxo::transparent_coinbase_spend(outpoint, spend_restriction, ordered_utxo.as_ref());
+    let result = check::utxo::transparent_coinbase_spend(
+        outpoint,
+        spend_restriction,
+        ordered_utxo.as_ref(),
+        Network::Mainnet.transparent_coinbase_maturity(),
+    );
 
     assert_eq!(
         result,
@@ -80,8 +85,12 @@ fn reject_unshielded_coinbase_utxo_spend() {
 
     let spend_restriction = transparent::CoinbaseSpendRestriction::DisallowCoinbaseSpend;
 
-    let result =
-        check::utxo::transparent_coinbase_spend(outpoint, spend_restriction, ordered_utxo.as_ref());
+    let result = check::utxo::transparent_coinbase_spend(
+        outpoint,
+        spend_restriction,
+        ordered_utxo.as_ref(),
+        Network::Mainnet.transparent_coinbase_maturity(),
+    );
     assert_eq!(result, Err(UnshieldedTransparentCoinbaseSpend { outpoint }));
 }
 
@@ -106,8 +115,12 @@ fn reject_immature_coinbase_utxo_spend() {
     let spend_restriction =
         transparent::CoinbaseSpendRestriction::CheckCoinbaseMaturity { spend_height };
 
-    let result =
-        check::utxo::transparent_coinbase_spend(outpoint, spend_restriction, ordered_utxo.as_ref());
+    let result = check::utxo::transparent_coinbase_spend(
+        outpoint,
+        spend_restriction,
+        ordered_utxo.as_ref(),
+        Network::Mainnet.transparent_coinbase_maturity(),
+    );
     assert_eq!(
         result,
         Err(ImmatureTransparentCoinbaseSpend {
@@ -117,6 +130,47 @@ fn reject_immature_coinbase_utxo_spend() {
             created_height
         })
     );
+}
+
+#[test]
+fn catecash_devnet_coinbase_matures_after_240_blocks() {
+    let _init_guard = zebra_test::init();
+    let network = Network::CatecashDevnet;
+    let created_height = Height(1);
+    let outpoint = transparent::OutPoint {
+        hash: transaction::Hash([0u8; 32]),
+        index: 0,
+    };
+    let output = transparent::Output {
+        value: Amount::zero(),
+        lock_script: transparent::Script::new(&[]),
+    };
+    let utxo = transparent::OrderedUtxo::new(output, created_height, 0);
+    let min_spend_height = Height(created_height.0 + 240);
+
+    for spend_height in [Height(240), Height(241)] {
+        let restriction =
+            transparent::CoinbaseSpendRestriction::CheckCoinbaseMaturity { spend_height };
+        let result = check::utxo::transparent_coinbase_spend(
+            outpoint,
+            restriction,
+            utxo.as_ref(),
+            network.transparent_coinbase_maturity(),
+        );
+        if spend_height < min_spend_height {
+            assert_eq!(
+                result,
+                Err(ImmatureTransparentCoinbaseSpend {
+                    outpoint,
+                    spend_height,
+                    min_spend_height,
+                    created_height,
+                })
+            );
+        } else {
+            assert_eq!(result, Ok(()));
+        }
+    }
 }
 
 /// Verify that `remaining_transaction_value` scales linearly with the number

@@ -237,6 +237,12 @@ pub async fn connect_to_external_zcashd_compat(kind: NetworkKind) -> Result<Zcas
         NetworkKind::Regtest => {
             unreachable!("regtest is handled by spawn_zebrad_with_zcashd_compat")
         }
+        NetworkKind::CatecashDevnet => {
+            unreachable!("Catecash devnet does not support zcashd compatibility")
+        }
+        NetworkKind::CatecashMainnet => {
+            unreachable!("Catecash mainnet does not support zcashd compatibility")
+        }
     };
 
     Ok(ZcashdCompatSetup {

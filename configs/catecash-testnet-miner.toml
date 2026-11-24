@@ -1,0 +1,23 @@
+# Loopback-only Catecash testnet version 1 private-rehearsal miner.
+# Start catecash-testnet-peer.toml first.
+
+[network]
+network = "CatecashTestnet"
+listen_addr = "127.0.0.1:34353"
+initial_mainnet_peers = []
+initial_testnet_peers = ["127.0.0.1:34354"]
+peerset_initial_target_size = 1
+max_connections_per_ip = 2
+cache_dir = false
+
+[state]
+cache_dir = "target/catecash-testnet-miner-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34352"
+enable_cookie_auth = false
+
+[mining]
+# Public test vector with no known private key; rewards cannot be spent.
+miner_address = "EMHKsQKxJbucJ4NBdJ9xZ9ZdDayLWutX19e"
+internal_miner = true

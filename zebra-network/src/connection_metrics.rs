@@ -131,6 +131,9 @@ pub(crate) fn network_kind_label(network: &Network) -> &'static str {
         NetworkKind::Mainnet => "mainnet",
         NetworkKind::Testnet => "testnet",
         NetworkKind::Regtest => "regtest",
+        NetworkKind::CatecashDevnet => "catecash_devnet",
+        NetworkKind::CatecashMainnet => "catecash_mainnet",
+        NetworkKind::CatecashTestnet => "catecash_testnet",
     }
 }
 

@@ -1,6 +1,7 @@
 //! Proof-of-work implementation.
 
 pub mod difficulty;
+pub mod digishield;
 pub mod equihash;
 mod u256;
 

@@ -17,7 +17,9 @@ use zebra_chain::{
     history_tree::{HistoryTreeError, NonEmptyHistoryTree},
     parameters::{Network, NetworkKind},
     primitives::zcash_history,
-    value_balance::{ValueBalance, SERIALIZED_SIZE},
+    value_balance::{
+        network::NetworkChainValuePools, wide::WideValueBalance, ValueBalance, SERIALIZED_SIZE,
+    },
 };
 
 use crate::service::finalized_state::disk_format::{FromDisk, IntoDisk};
@@ -33,6 +35,45 @@ impl IntoDisk for ValueBalance<NonNegative> {
 impl FromDisk for ValueBalance<NonNegative> {
     fn from_bytes(bytes: impl AsRef<[u8]>) -> Self {
         ValueBalance::from_bytes(bytes.as_ref()).expect("ValueBalance should be parsable")
+    }
+}
+
+const CATECASH_POOL_PREFIX: &[u8; 4] = b"CATE";
+
+impl IntoDisk for NetworkChainValuePools {
+    type Bytes = Vec<u8>;
+
+    fn as_bytes(&self) -> Self::Bytes {
+        match self {
+            Self::Zcash(value) => value.to_bytes().to_vec(),
+            Self::Catecash(value) => [CATECASH_POOL_PREFIX.as_slice(), &value.to_bytes()].concat(),
+        }
+    }
+}
+
+impl FromDisk for NetworkChainValuePools {
+    fn from_bytes(bytes: impl AsRef<[u8]>) -> Self {
+        let bytes = bytes.as_ref();
+        if bytes.len()
+            == CATECASH_POOL_PREFIX.len() + zebra_chain::value_balance::wide::SERIALIZED_SIZE
+        {
+            let wide = bytes
+                .strip_prefix(CATECASH_POOL_PREFIX)
+                .expect("wide pool records must carry the Catecash prefix");
+            Self::Catecash(
+                WideValueBalance::from_bytes(
+                    wide,
+                    zebra_chain::value_balance::wide::CATECASH_MAX_SCHEDULED_SUPPLY_ZAT,
+                )
+                .expect("stored Catecash pools must be valid"),
+            )
+        } else {
+            assert!(
+                matches!(bytes.len(), 32 | 40 | 48 | SERIALIZED_SIZE),
+                "invalid Zcash pool record length"
+            );
+            Self::Zcash(ValueBalance::from_bytes(bytes).expect("stored Zcash pools must be valid"))
+        }
     }
 }
 
@@ -162,21 +203,52 @@ impl FromDisk for HistoryTreeParts {
 }
 
 impl IntoDisk for BlockInfo {
-    type Bytes = [u8; SERIALIZED_SIZE + 4];
+    type Bytes = Vec<u8>;
 
     fn as_bytes(&self) -> Self::Bytes {
+        if let NetworkChainValuePools::Catecash(value) = self.value_pools() {
+            return [
+                CATECASH_POOL_PREFIX.as_slice(),
+                &value.to_bytes(),
+                &self.size().to_le_bytes(),
+            ]
+            .concat();
+        }
         let mut bytes = [0; SERIALIZED_SIZE + 4];
-        let value_pools = self.value_pools().to_bytes();
+        let NetworkChainValuePools::Zcash(value_pools) = self.value_pools() else {
+            unreachable!()
+        };
+        let value_pools = value_pools.to_bytes();
         bytes[..48].copy_from_slice(&value_pools[..48]);
         bytes[48..52].copy_from_slice(&self.size().to_le_bytes());
         bytes[52..].copy_from_slice(&value_pools[48..]);
-        bytes
+        bytes.to_vec()
     }
 }
 
 impl FromDisk for BlockInfo {
     fn from_bytes(bytes: impl AsRef<[u8]>) -> Self {
         let bytes = bytes.as_ref();
+
+        if bytes.len()
+            == CATECASH_POOL_PREFIX.len() + zebra_chain::value_balance::wide::SERIALIZED_SIZE + 4
+        {
+            let wide = bytes
+                .strip_prefix(CATECASH_POOL_PREFIX)
+                .expect("wide block info must carry the Catecash prefix");
+            assert_eq!(
+                wide.len(),
+                zebra_chain::value_balance::wide::SERIALIZED_SIZE + 4
+            );
+            let pools = WideValueBalance::from_bytes(
+                &wide[..112],
+                zebra_chain::value_balance::wide::CATECASH_MAX_SCHEDULED_SUPPLY_ZAT,
+            )
+            .expect("stored Catecash block pools must be valid");
+            let size =
+                u32::from_le_bytes(wide[112..].try_into().expect("block size has four bytes"));
+            return BlockInfo::new(NetworkChainValuePools::Catecash(pools), size);
+        }
 
         // Preserve the v28 pool-and-size prefix; append NSM after the block size.
         // Legacy layouts leave newer pools zero; ignore forward-compatible trailing bytes.
@@ -188,7 +260,7 @@ impl FromDisk for BlockInfo {
                 let nsm = Amount::from_bytes(bytes[52..60].try_into().expect("must be 8 bytes"))
                     .expect("stored NSM balance must be a valid nonnegative amount");
                 value_pools.set_nsm_amount(nsm);
-                BlockInfo::new(value_pools, size)
+                BlockInfo::new(NetworkChainValuePools::Zcash(value_pools), size)
             }
             // v28.0 records (exactly 52 bytes; the `60..` arm above already took every wide
             // record): 48-byte pool + 4-byte size.
@@ -196,7 +268,7 @@ impl FromDisk for BlockInfo {
                 let value_pools = ValueBalance::<NonNegative>::from_bytes(&bytes[0..48])
                     .expect("must work for 48 bytes");
                 let size = u32::from_le_bytes(bytes[48..52].try_into().expect("must be 4 bytes"));
-                BlockInfo::new(value_pools, size)
+                BlockInfo::new(NetworkChainValuePools::Zcash(value_pools), size)
             }
             // Pre-NU6.3 records (exactly 44 bytes; the arms above already took every NU6.3 and
             // NU7 record).
@@ -204,7 +276,7 @@ impl FromDisk for BlockInfo {
                 let value_pools = ValueBalance::<NonNegative>::from_bytes(&bytes[0..40])
                     .expect("must work for 40 bytes");
                 let size = u32::from_le_bytes(bytes[40..44].try_into().expect("must be 4 bytes"));
-                BlockInfo::new(value_pools, size)
+                BlockInfo::new(NetworkChainValuePools::Zcash(value_pools), size)
             }
             _ => panic!("invalid format"),
         }

@@ -11,7 +11,7 @@ use crate::parameters::{
 };
 use crate::parameters::{subsidy::FundingStreamReceiver, NetworkKind};
 use crate::{
-    amount::{Amount, DeferredPoolBalanceChange},
+    amount::{Amount, DeferredPoolBalanceChange, COIN},
     block::Block,
     transaction::Transaction,
     transparent::{Address, Output},
@@ -19,6 +19,108 @@ use crate::{
 use color_eyre::Report;
 
 use super::*;
+
+#[test]
+fn catecash_devnet_reward_has_no_halving_or_allocations() -> Result<(), Report> {
+    use std::sync::Arc;
+
+    use crate::serialization::ZcashDeserialize;
+
+    let network = Network::CatecashDevnet;
+    assert!(network.is_catecash_devnet());
+    assert_eq!(
+        scheduled_block_subsidy(Height(0), &network)?,
+        Amount::<NonNegative>::zero()
+    );
+
+    let reward = Amount::<NonNegative>::try_from(5_000 * COIN)?;
+    // At the 25-second target there are 3,456 blocks per day.
+    assert_eq!(
+        i128::from(reward.zatoshis()) * 3_456,
+        i128::from(17_280_000 * COIN)
+    );
+    for height in [1, 2, 1_000_000, 4_000_000, 10_000_000] {
+        let height = Height(height);
+        assert_eq!(scheduled_block_subsidy(height, &network)?, reward);
+        assert_eq!(block_subsidy(height, &network)?, reward);
+        assert_eq!(
+            founders_reward(&network, height),
+            Amount::<NonNegative>::zero()
+        );
+        assert!(funding_stream_values(height, &network, reward)?.is_empty());
+        assert_eq!(miner_subsidy(height, &network, reward)?, reward);
+        let fees = Amount::try_from(123_456)?;
+        assert_eq!(
+            nsm_fee_contribution(height, &network, fees),
+            Amount::<NonNegative>::zero()
+        );
+    }
+
+    let zcash = Network::new_default_testnet();
+    assert!(!zcash.is_catecash_devnet());
+    assert_ne!(scheduled_block_subsidy(Height(1), &zcash)?, reward);
+
+    let fees = Amount::<NonNegative>::try_from(123_456)?;
+    let coinbase = |payout| {
+        Transaction::test_v4(
+            vec![crate::transparent::Input::Coinbase {
+                height: Height(1),
+                data: vec![0],
+                sequence: u32::MAX,
+            }],
+            vec![Output {
+                value: Amount::try_from(payout).expect("test payout is valid"),
+                lock_script: crate::transparent::Script::new(&[]),
+            }],
+            crate::transaction::LockTime::unlocked(),
+            Height(1),
+        )
+    };
+    let full_payout = (reward + fees)?.zatoshis();
+    assert!(miner_fees_are_valid(
+        &coinbase(full_payout),
+        Height(1),
+        fees,
+        reward,
+        DeferredPoolBalanceChange::zero(),
+        &network,
+    )
+    .is_ok());
+    for wrong_payout in [full_payout - 1, full_payout + 1] {
+        assert!(miner_fees_are_valid(
+            &coinbase(wrong_payout),
+            Height(1),
+            fees,
+            reward,
+            DeferredPoolBalanceChange::zero(),
+            &network,
+        )
+        .is_err());
+    }
+
+    let mut genesis =
+        Block::zcash_deserialize(&zebra_test::vectors::BLOCK_MAINNET_GENESIS_BYTES[..])?;
+    let genesis_coinbase = |payout| {
+        Transaction::test_v4(
+            vec![crate::transparent::Input::Coinbase {
+                height: Height::MIN,
+                data: crate::transparent::serialize::CATECASH_GENESIS_COINBASE_SCRIPT_SIG.to_vec(),
+                sequence: u32::MAX,
+            }],
+            vec![Output {
+                value: Amount::try_from(payout).expect("test payout is valid"),
+                lock_script: crate::transparent::Script::new(&[]),
+            }],
+            crate::transaction::LockTime::unlocked(),
+            Height::MIN,
+        )
+    };
+    genesis.transactions = vec![Arc::new(genesis_coinbase(1))];
+    assert!(subsidy_is_valid(&genesis, &network, Amount::zero()).is_err());
+    genesis.transactions = vec![Arc::new(genesis_coinbase(0))];
+    assert!(subsidy_is_valid(&genesis, &network, Amount::zero()).is_ok());
+    Ok(())
+}
 
 /// Checks that the Mainnet funding stream values are correct.
 #[test]
@@ -158,6 +260,11 @@ fn test_funding_stream_addresses() -> Result<(), Report> {
                     NetworkKind::Mainnet => NetworkKind::Mainnet,
                     // `Regtest` uses `Testnet` transparent addresses.
                     NetworkKind::Testnet | NetworkKind::Regtest => NetworkKind::Testnet,
+                    NetworkKind::CatecashDevnet
+                    | NetworkKind::CatecashMainnet
+                    | NetworkKind::CatecashTestnet => {
+                        unreachable!("Network::iter only includes Zcash mainnet and testnet")
+                    }
                 };
 
                 assert_eq!(

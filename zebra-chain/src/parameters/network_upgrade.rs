@@ -76,6 +76,12 @@ impl TryFrom<u32> for NetworkUpgrade {
     type Error = crate::Error;
 
     fn try_from(branch_id: u32) -> Result<Self, Self::Error> {
+        if branch_id == u32::from(ConsensusBranchId::CATECASH_LAUNCH)
+            || branch_id == u32::from(ConsensusBranchId::CATECASH_MAINNET_CANDIDATE)
+            || branch_id == u32::from(ConsensusBranchId::CATECASH_TESTNET)
+        {
+            return Ok(Self::Nu7);
+        }
         CONSENSUS_BRANCH_IDS
             .iter()
             .find(|id| id.1 == ConsensusBranchId(branch_id))
@@ -330,6 +336,9 @@ impl Network {
         match self {
             Mainnet => MAINNET_ACTIVATION_HEIGHTS.iter().cloned().collect(),
             Testnet(params) => params.activation_heights().clone(),
+            Network::CatecashDevnet => super::network::catecash::activation_heights(),
+            Network::CatecashMainnet => super::network::catecash_mainnet::activation_heights(),
+            Network::CatecashTestnet => super::network::catecash_testnet::activation_heights(),
         }
     }
 
@@ -538,7 +547,13 @@ impl NetworkUpgrade {
             {
                 None
             }
-            (Network::Mainnet, _) => None,
+            (
+                Network::Mainnet
+                | Network::CatecashDevnet
+                | Network::CatecashMainnet
+                | Network::CatecashTestnet,
+                _,
+            ) => None,
             (Network::Testnet(_params), _) => {
                 let network_upgrade = NetworkUpgrade::current(network, height);
                 let multiplier = if network_upgrade >= Nu7 {
@@ -646,6 +661,14 @@ impl From<zcash_protocol::consensus::NetworkUpgrade> for NetworkUpgrade {
 }
 
 impl ConsensusBranchId {
+    /// Catecash devnet's existing signing domain.
+    pub const CATECASH_LAUNCH: ConsensusBranchId = ConsensusBranchId(0xea3b_eeb4);
+
+    /// Candidate Catecash mainnet signing domain, from SHA-256("catecash:mainnet:nu7:v1").
+    pub const CATECASH_MAINNET_CANDIDATE: ConsensusBranchId = ConsensusBranchId(0x5bc6_8392);
+    /// Catecash testnet version 1 signing domain, from SHA-256("catecash:testnet:nu7:v1").
+    pub const CATECASH_TESTNET: ConsensusBranchId = ConsensusBranchId(0xb80d_ae22);
+
     /// The value used by `zcashd` RPCs for missing consensus branch IDs.
     ///
     /// # Consensus
@@ -660,6 +683,15 @@ impl ConsensusBranchId {
     ///
     /// Returns None if the network has no branch id at this height.
     pub fn current(network: &Network, height: block::Height) -> Option<ConsensusBranchId> {
-        NetworkUpgrade::current(network, height).branch_id()
+        let upgrade = NetworkUpgrade::current(network, height);
+        if network.is_catecash_devnet() && upgrade == NetworkUpgrade::Nu7 {
+            Some(Self::CATECASH_LAUNCH)
+        } else if matches!(network, Network::CatecashMainnet) && upgrade == NetworkUpgrade::Nu7 {
+            Some(Self::CATECASH_MAINNET_CANDIDATE)
+        } else if matches!(network, Network::CatecashTestnet) && upgrade == NetworkUpgrade::Nu7 {
+            Some(Self::CATECASH_TESTNET)
+        } else {
+            upgrade.branch_id()
+        }
     }
 }

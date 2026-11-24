@@ -952,12 +952,13 @@ where
             .into());
         }
 
-        let subsidy = zebra_chain::parameters::subsidy::block_subsidy_with_parent_pools(
-            chain_info.tip_height.next().map_misc_error()?,
-            net,
-            chain_info.chain_value_pools,
-        )
-        .map_misc_error()?;
+        let subsidy =
+            zebra_chain::parameters::subsidy::block_subsidy_with_parent_nsm_value_balance(
+                chain_info.tip_height.next().map_misc_error()?,
+                net,
+                chain_info.chain_value_pools.nsm_amount(),
+            )
+            .map_misc_error()?;
         if let Err(error) = subsidy_is_valid(&block, net, subsidy) {
             return Ok(BlockProposalResponse::rejected("invalid proposal", error.into()).into());
         }

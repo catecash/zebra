@@ -1,0 +1,21 @@
+[Unit]
+Description=Catecash private testnet Zebra node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=catecash
+Group=catecash
+StateDirectory=catecash-testnet
+ExecStart=/usr/local/bin/zebrad -c /etc/catecash/testnet.toml start
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

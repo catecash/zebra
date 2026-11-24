@@ -482,7 +482,7 @@ proptest! {
 
         prop_assert_eq!(state_service.read_service.db.finalized_value_pool(), ValueBalance::zero());
         prop_assert_eq!(
-            state_service.read_service.latest_non_finalized_state().best_chain().map(|chain| chain.chain_value_pools).unwrap_or_else(ValueBalance::zero),
+            state_service.read_service.latest_non_finalized_state().best_chain().map(|chain| chain.chain_value_pools).unwrap_or_default(),
             ValueBalance::zero()
         );
 

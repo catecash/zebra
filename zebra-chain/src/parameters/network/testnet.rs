@@ -1028,6 +1028,12 @@ impl ParametersBuilder {
             return Err(ParametersBuilderError::InvalidHalvingInterval);
         }
 
+        // The Catecash development profile tests a constant reward. Its supply
+        // model still needs wider value-pool balances before any chain launch.
+        if network.is_catecash() {
+            return Ok(());
+        }
+
         let mut total = cumulative_scheduled_issuance_zatoshis(Height::MAX, network)
             .map_err(|_| ParametersBuilderError::InvalidSubsidySchedule)?;
         // Genesis is unspendable and is excluded from the monetary cap.
@@ -1579,6 +1585,9 @@ impl Network {
 
     /// Returns slow start interval for this network
     pub fn slow_start_interval(&self) -> Height {
+        if self.is_catecash() {
+            return Height::MIN;
+        }
         if let Self::Testnet(params) = self {
             params.slow_start_interval()
         } else {
@@ -1588,6 +1597,9 @@ impl Network {
 
     /// Returns slow start shift for this network
     pub fn slow_start_shift(&self) -> Height {
+        if self.is_catecash() {
+            return Height::MIN;
+        }
         if let Self::Testnet(params) = self {
             params.slow_start_shift()
         } else {
@@ -1604,6 +1616,11 @@ impl Network {
 
     /// Returns post-Canopy funding streams for this network at the provided height
     pub fn all_funding_streams(&self) -> &Vec<FundingStreams> {
+        if self.is_catecash() {
+            static EMPTY: std::sync::LazyLock<Vec<FundingStreams>> =
+                std::sync::LazyLock::new(Vec::new);
+            return &EMPTY;
+        }
         if let Self::Testnet(params) = self {
             params.funding_streams()
         } else {
@@ -1626,6 +1643,9 @@ impl Network {
         match self {
             Network::Mainnet => &mainnet::FOUNDER_ADDRESS_LIST,
             Network::Testnet(_) => &testnet::FOUNDER_ADDRESS_LIST,
+            Network::CatecashDevnet => &[],
+            Network::CatecashMainnet => &[],
+            Network::CatecashTestnet => &[],
         }
     }
 }

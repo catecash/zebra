@@ -92,7 +92,10 @@ use tokio::{
 use tower::{builder::ServiceBuilder, util::BoxService, ServiceExt};
 use tracing::Instrument;
 
-use zebra_chain::block::genesis::regtest_genesis_block;
+use zebra_chain::block::genesis::{
+    catecash_devnet_genesis_block, catecash_mainnet_genesis_block, catecash_testnet_genesis_block,
+    regtest_genesis_block,
+};
 use zebra_consensus::router::BackgroundTaskHandles;
 use zebra_rpc::{methods::RpcImpl, server::RpcServer, SubmitBlockChannel};
 
@@ -704,16 +707,26 @@ impl StartCmd {
         // that multi-hop block propagation works: gossiped blocks that arrive out of
         // order (e.g. only the latest tip hash was gossiped) will be recovered by the
         // syncer using block locators within REGTEST_SYNC_RESTART_DELAY (2 seconds).
-        if is_regtest
+        if (is_regtest || config.network.network.is_catecash())
             && !syncer
                 .state_contains(config.network.network.genesis_hash())
                 .await?
         {
+            let genesis_block = match &config.network.network {
+                zebra_chain::parameters::Network::CatecashDevnet => catecash_devnet_genesis_block(),
+                zebra_chain::parameters::Network::CatecashMainnet => {
+                    catecash_mainnet_genesis_block()
+                }
+                zebra_chain::parameters::Network::CatecashTestnet => {
+                    catecash_testnet_genesis_block()
+                }
+                _ => regtest_genesis_block(),
+            };
             let genesis_hash = block_verifier_router
                 .clone()
-                .oneshot(zebra_consensus::Request::Commit(regtest_genesis_block()))
+                .oneshot(zebra_consensus::Request::Commit(genesis_block))
                 .await
-                .expect("should validate Regtest genesis block");
+                .expect("should validate the configured genesis block");
 
             assert_eq!(
                 genesis_hash,
@@ -1017,6 +1030,49 @@ impl config::Override<ZebradConfig> for StartCmd {
             config.zcashd_compat.enabled = true;
         }
 
+        if config.network.network.is_catecash() && config.zcashd_compat.enabled {
+            return Err(
+                std::io::Error::other("zcashd compatibility is unavailable on Catecash").into(),
+            );
+        }
+
+        if matches!(
+            config.network.network,
+            zebra_chain::parameters::Network::CatecashMainnet
+        ) && (!catecash_mainnet_candidate_p2p_listener(config.network.listen_addr)
+            || config.network.external_addr.is_some())
+        {
+            return Err(std::io::Error::other(
+                "Catecash mainnet candidate P2P must bind loopback or an approved private host",
+            )
+            .into());
+        }
+
+        if matches!(
+            config.network.network,
+            zebra_chain::parameters::Network::CatecashTestnet
+        ) && (!matches!(
+            config.network.listen_addr.ip(),
+            std::net::IpAddr::V4(ip) if ip.is_loopback() || ip.is_private()
+        ) || config.network.external_addr.is_some())
+        {
+            return Err(std::io::Error::other(
+                "Catecash testnet P2P must bind loopback or a private IPv4 address until launch review",
+            )
+            .into());
+        }
+
+        if config.network.network.is_catecash()
+            && config
+                .rpc
+                .listen_addr
+                .is_some_and(|addr| !addr.ip().is_loopback())
+        {
+            return Err(
+                std::io::Error::other("Catecash candidate RPC must listen on loopback").into(),
+            );
+        }
+
         if !config.zcashd_compat.enabled && !config.zcashd_compat.block_gossip_peer_ips.is_empty() {
             return Err(std::io::Error::other(
                 "zcashd_compat.block_gossip_peer_ips requires zcashd_compat.enabled = true",
@@ -1049,14 +1105,65 @@ impl config::Override<ZebradConfig> for StartCmd {
     }
 }
 
+/// Keep the candidate network on the three dedicated hosts until public launch review.
+/// The host firewall separately limits which of these hosts may connect to each listener.
+fn catecash_mainnet_candidate_p2p_listener(addr: SocketAddr) -> bool {
+    addr.ip().is_loopback()
+        || matches!(
+            addr,
+            SocketAddr::V4(private)
+                if private.port() == 34333
+                    && matches!(private.ip().octets(), [10, 58, 1, 1..=3])
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use abscissa_core::config::Override;
     use color_eyre::eyre::eyre;
 
-    use super::StartCmd;
+    use super::{catecash_mainnet_candidate_p2p_listener, StartCmd};
     use crate::components::zcashd_compat;
     use crate::config::ZebradConfig;
+
+    #[test]
+    fn mainnet_candidate_p2p_accepts_only_dedicated_private_hosts() {
+        assert!(catecash_mainnet_candidate_p2p_listener(
+            "127.0.0.1:34333".parse().unwrap()
+        ));
+        for host in 1..=3 {
+            assert!(catecash_mainnet_candidate_p2p_listener(
+                format!("10.58.1.{host}:34333").parse().unwrap()
+            ));
+        }
+        for address in [
+            "10.58.1.4:34333",
+            "10.58.1.1:34334",
+            "0.0.0.0:34333",
+            "[::]:34333",
+        ] {
+            assert!(!catecash_mainnet_candidate_p2p_listener(
+                address.parse().unwrap()
+            ));
+        }
+    }
+
+    #[test]
+    fn mainnet_candidate_p2p_still_rejects_public_advertising() {
+        let cmd = StartCmd {
+            filters: Vec::new(),
+            zcashd_compat: false,
+            unsafe_low_specs: false,
+        };
+        let mut config = ZebradConfig::default();
+        config.network.network = zebra_chain::parameters::Network::CatecashMainnet;
+        config.network.listen_addr = "10.58.1.1:34333".parse().unwrap();
+        cmd.override_config(config.clone())
+            .expect("approved private candidate listener should start");
+
+        config.network.external_addr = Some("10.58.1.1:34333".parse().unwrap());
+        assert!(cmd.override_config(config).is_err());
+    }
 
     #[test]
     fn zcashd_compat_flag_enables_mode() {

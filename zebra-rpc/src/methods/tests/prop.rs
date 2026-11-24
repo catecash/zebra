@@ -478,7 +478,7 @@ proptest! {
                         .respond(zebra_state::ReadResponse::TipPoolValues {
                             tip_height: block_height,
                             tip_hash: block_hash,
-                            value_balance,
+                            value_balance: value_balance.into(),
                         });
 
                     state
@@ -573,6 +573,9 @@ proptest! {
                 let block_bytes = &zebra_test::vectors::BLOCK_TESTNET_GENESIS_BYTES;
                 let block: Arc<Block> = block_bytes.zcash_deserialize_into().expect("block is valid");
                 block
+            },
+            Network::CatecashDevnet | Network::CatecashMainnet | Network::CatecashTestnet => {
+                unreachable!("this test only uses Zcash mainnet and testnet genesis vectors")
             },
         };
 
@@ -673,7 +676,7 @@ proptest! {
             let state_query = state
                 .expect_request(zebra_state::ReadRequest::AddressBalance(addresses))
                 .map_ok(|responder| {
-                    responder.respond(zebra_state::ReadResponse::AddressBalance { balance, received: balance.into() })
+                    responder.respond(zebra_state::ReadResponse::AddressBalance { balance: i128::from(balance.zatoshis()), received: u128::from(u64::from(balance)) })
                 });
 
             // Await the RPC call and the state query

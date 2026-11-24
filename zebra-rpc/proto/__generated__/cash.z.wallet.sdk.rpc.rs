@@ -292,6 +292,17 @@ pub struct AddressList {
 pub struct Balance {
     #[prost(int64, tag = "1")]
     pub value_zat: i64,
+    /// Always present on Catecash. Its fixed64 halves encode the exact
+    /// nonnegative 128-bit balance. Zcash continues to use valueZat.
+    #[prost(message, optional, tag = "2")]
+    pub value_zat_wide: ::core::option::Option<WideBalance>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WideBalance {
+    #[prost(fixed64, tag = "1")]
+    pub low: u64,
+    #[prost(fixed64, tag = "2")]
+    pub high: u64,
 }
 /// The a shortened transaction ID is the prefix in big-endian (hex) format
 /// (then converted to binary).

@@ -12,11 +12,14 @@ use zebra_chain::{
     block,
     history_tree::HistoryTreeError,
     ironwood, orchard, sapling, sprout, transaction, transparent,
-    value_balance::{ValueBalance, ValueBalanceError},
+    value_balance::{
+        network::{Error as NetworkPoolError, NetworkChainValuePools},
+        ValueBalance, ValueBalanceError,
+    },
     work::difficulty::CompactDifficulty,
 };
 
-use crate::{constants::MIN_TRANSPARENT_COINBASE_MATURITY, HashOrHeight, KnownBlock};
+use crate::{HashOrHeight, KnownBlock};
 
 /// A wrapper for type erased errors that is itself clonable and implements the
 /// Error trait
@@ -419,9 +422,7 @@ pub enum ValidateContextError {
     #[error(
         "immature transparent coinbase spend: \
         attempt to spend {outpoint:?} at {spend_height:?}, \
-        but spends are invalid before {min_spend_height:?}, \
-        which is {MIN_TRANSPARENT_COINBASE_MATURITY:?} blocks \
-        after it was created at {created_height:?}"
+        created at {created_height:?} and invalid before {min_spend_height:?}"
     )]
     #[non_exhaustive]
     ImmatureTransparentCoinbaseSpend {
@@ -522,8 +523,8 @@ pub enum ValidateContextError {
     )]
     #[non_exhaustive]
     AddValuePool {
-        value_balance_error: ValueBalanceError,
-        chain_value_pools: Box<ValueBalance<NonNegative>>,
+        value_balance_error: NetworkPoolError,
+        chain_value_pools: Box<NetworkChainValuePools>,
         block_value_pool_change: Box<ValueBalance<NegativeAllowed>>,
         height: Option<block::Height>,
     },

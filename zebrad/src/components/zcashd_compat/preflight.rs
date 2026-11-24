@@ -235,7 +235,11 @@ fn disk_thresholds(network: &Network) -> DiskThresholds {
             min_zcashd_bytes: MAINNET_MIN_ZCASHD_PROVISIONED_BYTES,
             recommended_combined_bytes: MAINNET_RECOMMENDED_COMBINED_TOTAL_BYTES,
         },
-        NetworkKind::Testnet | NetworkKind::Regtest => DiskThresholds {
+        NetworkKind::Testnet
+        | NetworkKind::Regtest
+        | NetworkKind::CatecashDevnet
+        | NetworkKind::CatecashMainnet
+        | NetworkKind::CatecashTestnet => DiskThresholds {
             min_zebra_bytes: TESTNET_MIN_ZEBRA_PROVISIONED_BYTES,
             min_zcashd_bytes: TESTNET_MIN_ZCASHD_PROVISIONED_BYTES,
             recommended_combined_bytes: TESTNET_RECOMMENDED_COMBINED_TOTAL_BYTES,

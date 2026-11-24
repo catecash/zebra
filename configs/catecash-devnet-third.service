@@ -1,0 +1,22 @@
+[Unit]
+Description=Catecash third devnet verifier
+After=network-online.target catecash-devnet.service catecash-devnet-peer.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=catecash
+Group=catecash
+WorkingDirectory=/opt/catecash/source
+ExecStart=/opt/catecash/zebrad-no-miner -c /opt/catecash/third.toml start
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/catecash
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

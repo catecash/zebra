@@ -163,8 +163,8 @@ fn intra_block_self_spend_chain_in_finalized_state() {
     // Pre-populate `address_balances` with A's pre-block on-chain balance, the way
     // `block.rs` does via `read_addr_locs`.
     let mut existing_abl = AddressBalanceLocation::new(existing_output_location);
-    *existing_abl.balance_mut() = value;
-    *existing_abl.received_mut() = u64::from(value);
+    *existing_abl.balance_mut() = i128::from(value.zatoshis());
+    *existing_abl.received_mut() = u128::from(u64::from(value));
     let address_balances =
         AddressBalanceLocationUpdates::Insert(HashMap::from([(address, existing_abl)]));
 
@@ -198,10 +198,124 @@ fn intra_block_self_spend_chain_in_finalized_state() {
     let (balance, received) = zebra_db
         .address_balance(&address)
         .expect("address balance is present after writing the batch");
-    assert_eq!(balance, value, "final balance equals the existing balance");
+    assert_eq!(
+        balance,
+        i128::from(value.zatoshis()),
+        "final balance equals the existing balance"
+    );
     assert_eq!(
         received,
-        u64::from(value).saturating_mul(3),
+        u128::from(u64::from(value)) * 3,
         "received counts the existing V plus two intra-block credits of V",
+    );
+}
+
+/// Replaying the same synthetic outputs into a fresh address index must give the
+/// same wide total as reopening the original index. This tests the index writer
+/// and disk format, not block consensus or a production reindex command.
+#[test]
+fn catecash_address_index_replay_above_zcash_cap() {
+    let _init_guard = zebra_test::init();
+    let network = Network::CatecashDevnet;
+    let address = Address::from_script_hash(NetworkKind::CatecashDevnet, [0x43; 20]);
+    let value = Amount::<NonNegative>::try_from(MAX_MONEY / 2 + 1).unwrap();
+    let expected = i128::from(MAX_MONEY) + 2;
+    let cache = tempfile::tempdir().unwrap();
+    let replay_cache = tempfile::tempdir().unwrap();
+
+    let open = |cache_dir: &std::path::Path| {
+        ZebraDb::new(
+            &Config {
+                cache_dir: cache_dir.to_path_buf(),
+                ..Config::default()
+            },
+            STATE_DATABASE_KIND,
+            &state_database_format_version_in_code(),
+            &network,
+            true,
+            STATE_COLUMN_FAMILIES_IN_CODE
+                .iter()
+                .map(ToString::to_string),
+            false,
+        )
+        .unwrap()
+    };
+
+    let replay_output = |db: &ZebraDb, height: Height| {
+        let tx = Arc::new(Transaction::test_v1(
+            vec![],
+            vec![Output::new(value, address.script())],
+            LockTime::unlocked(),
+        ));
+        let header: block::Header = zebra_test::vectors::DUMMY_HEADER
+            .as_slice()
+            .zcash_deserialize_into()
+            .unwrap();
+        let block = Arc::new(Block {
+            header: Arc::new(header),
+            transactions: vec![tx],
+        });
+        let transaction_hashes: Arc<[_]> = block.transactions.iter().map(|tx| tx.hash()).collect();
+        let new_outputs = new_ordered_outputs_with_height(&block, height, &transaction_hashes);
+        let finalized = FinalizedBlock::from_checkpoint_verified(
+            CheckpointVerifiedBlock(SemanticallyVerifiedBlock {
+                block,
+                hash: block::Hash([u8::try_from(height.0).unwrap(); 32]),
+                height,
+                new_outputs,
+                transaction_hashes,
+                received_time: None,
+            }),
+            Treestate::default(),
+            DeferredPoolBalanceChange::zero(),
+        );
+        let output_location = OutputLocation::from_usize(height, 0, 0);
+        let outputs = BTreeMap::from([(
+            output_location,
+            transparent::Utxo::new(Output::new(value, address.script()), height, false),
+        )]);
+        let previous = db
+            .address_balance_location(&address)
+            .into_iter()
+            .map(|balance| (address, balance));
+        let mut batch = DiskWriteBatch::new();
+        batch.prepare_transparent_transaction_batch(
+            db,
+            &network,
+            &finalized,
+            &outputs,
+            &HashMap::new(),
+            &BTreeMap::new(),
+            #[cfg(feature = "indexer")]
+            &HashMap::new(),
+            AddressBalanceLocationUpdates::Insert(previous.collect()),
+        );
+        db.write_batch(batch).unwrap();
+    };
+
+    let original = open(cache.path());
+    for height in [Height(1), Height(2)] {
+        replay_output(&original, height);
+    }
+    let expected_received = u128::try_from(expected).unwrap();
+    assert_eq!(
+        original.address_balance(&address),
+        Some((expected, expected_received))
+    );
+    drop(original);
+
+    let reopened = open(cache.path());
+    assert_eq!(
+        reopened.address_balance(&address),
+        Some((expected, expected_received))
+    );
+
+    let rebuilt = open(replay_cache.path());
+    for height in [Height(1), Height(2)] {
+        replay_output(&rebuilt, height);
+    }
+    assert_eq!(
+        rebuilt.address_balance(&address),
+        reopened.address_balance(&address)
     );
 }

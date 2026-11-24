@@ -1,0 +1,16 @@
+# Second node for the local two-node Catecash devnet rehearsal.
+# Run from the repository root. It accepts the miner node on loopback only.
+
+[network]
+network = "CatecashDevnet"
+listen_addr = "127.0.0.1:34344"
+initial_testnet_peers = []
+peerset_initial_target_size = 1
+cache_dir = false
+
+[state]
+cache_dir = "target/catecash-devnet-peer-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34345"
+enable_cookie_auth = false

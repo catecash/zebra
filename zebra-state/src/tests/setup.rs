@@ -63,6 +63,7 @@ pub(crate) fn partial_nu5_chain_strategy(
                 nu = random_nu;
             }
 
+            let maturity = network.transparent_coinbase_maturity();
             zebra_chain::block::LedgerState::height_strategy(
                 height,
                 Some(nu),
@@ -73,7 +74,14 @@ pub(crate) fn partial_nu5_chain_strategy(
                 Block::partial_chain_strategy(
                     init,
                     blocks_after_nu_activation as usize,
-                    check::utxo::transparent_coinbase_spend,
+                    move |outpoint, restriction, utxo| {
+                        check::utxo::transparent_coinbase_spend(
+                            outpoint,
+                            restriction,
+                            utxo,
+                            maturity,
+                        )
+                    },
                     false,
                 )
             })

@@ -28,6 +28,28 @@ pub const GENESIS_COINBASE_SCRIPT_SIG: [u8; 77] = [
     54, 52, 56, 51, 53, 100, 51, 52,
 ];
 
+/// The proposed Catecash genesis message, with exact capitalization and punctuation.
+pub const CATECASH_GENESIS_MESSAGE: &[u8; 50] =
+    b"I am the fortunate one. The High G, The One above.";
+
+/// Catecash's height-zero coinbase script, using Zcash's genesis script prefix
+/// followed by a direct push of the chosen message.
+pub const CATECASH_GENESIS_COINBASE_SCRIPT_SIG: [u8; 58] = {
+    let mut script = [0u8; 58];
+    let prefix = [4, 255, 255, 7, 31, 1, 4, 50];
+    let mut index = 0;
+    while index < prefix.len() {
+        script[index] = prefix[index];
+        index += 1;
+    }
+    let mut index = 0;
+    while index < CATECASH_GENESIS_MESSAGE.len() {
+        script[prefix.len() + index] = CATECASH_GENESIS_MESSAGE[index];
+        index += 1;
+    }
+    script
+};
+
 /// Parses the BIP-34 block-height prefix of a non-genesis coinbase script and returns the height
 /// along with the trailing miner data. Also enforces the coinbase script length bound, since
 /// every production parse path for coinbase inputs goes through this function.
@@ -216,8 +238,10 @@ impl ZcashDeserialize for Input {
             }
             let script_sig = zcash_deserialize_bytes_external_count(len, &mut reader)?;
 
-            let (height, data) = if script_sig.as_slice() == GENESIS_COINBASE_SCRIPT_SIG {
-                (Height::MIN, GENESIS_COINBASE_SCRIPT_SIG.to_vec())
+            let (height, data) = if script_sig.as_slice() == GENESIS_COINBASE_SCRIPT_SIG
+                || script_sig.as_slice() == CATECASH_GENESIS_COINBASE_SCRIPT_SIG
+            {
+                (Height::MIN, script_sig)
             } else {
                 parse_coinbase_height(&script_sig)?
             };

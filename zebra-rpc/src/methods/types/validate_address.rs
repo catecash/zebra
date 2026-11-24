@@ -62,11 +62,13 @@ pub fn validate_address(
         return Ok(ValidateAddressResponse::invalid());
     }
 
-    // Testnet & regtest share format; only mainnet differs.
-    let addr_is_mainnet = matches!(address.network(), NetworkKind::Mainnet);
-    let net_is_mainnet = network.kind() == NetworkKind::Mainnet;
+    // Regtest shares transparent encodings with Testnet. Catecash has its own.
+    let expected_kind = match network.kind() {
+        NetworkKind::Regtest => NetworkKind::Testnet,
+        kind => kind,
+    };
 
-    if addr_is_mainnet != net_is_mainnet {
+    if address.network() != expected_kind {
         tracing::info!(
             ?network,
             address_network = ?address.network(),
@@ -80,4 +82,113 @@ pub fn validate_address(
         is_valid: true,
         is_script: Some(address.is_script_hash()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zcash_address::ToAddress;
+
+    #[test]
+    fn catecash_and_zcash_transparent_addresses_do_not_cross_networks() {
+        let hash = [0x42; 20];
+        let catecash = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::CatecashDevnet,
+            hash,
+        )
+        .encode();
+        let zcash = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::Main,
+            hash,
+        )
+        .encode();
+
+        assert!(
+            validate_address(Network::CatecashDevnet, catecash.clone())
+                .unwrap()
+                .is_valid
+        );
+        assert!(
+            !validate_address(Network::Mainnet, catecash)
+                .unwrap()
+                .is_valid
+        );
+        assert!(
+            !validate_address(Network::CatecashDevnet, zcash)
+                .unwrap()
+                .is_valid
+        );
+    }
+
+    #[test]
+    fn catecash_mainnet_candidate_rejects_other_network_addresses() {
+        let hash = [0x42; 20];
+        let mainnet_candidate = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::CatecashMainnet,
+            hash,
+        )
+        .encode();
+        let devnet = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::CatecashDevnet,
+            hash,
+        )
+        .encode();
+        let zcash = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::Main,
+            hash,
+        )
+        .encode();
+
+        assert!(
+            validate_address(Network::CatecashMainnet, mainnet_candidate.clone())
+                .unwrap()
+                .is_valid
+        );
+        for wrong in [devnet, zcash] {
+            assert!(
+                !validate_address(Network::CatecashMainnet, wrong)
+                    .unwrap()
+                    .is_valid
+            );
+        }
+        assert!(
+            !validate_address(Network::CatecashDevnet, mainnet_candidate)
+                .unwrap()
+                .is_valid
+        );
+    }
+
+    #[test]
+    fn catecash_testnet_rejects_devnet_mainnet_and_zcash_addresses() {
+        let hash = [0x42; 20];
+        let testnet = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::CatecashTestnet,
+            hash,
+        )
+        .encode();
+        assert_eq!(testnet, "EMHKsQKxJbucJ4NBdJ9xZ9ZdDayLWutX19e");
+        assert!(
+            validate_address(Network::CatecashTestnet, testnet.clone())
+                .unwrap()
+                .is_valid
+        );
+        for wrong_network in [
+            zcash_protocol::consensus::NetworkType::CatecashDevnet,
+            zcash_protocol::consensus::NetworkType::CatecashMainnet,
+            zcash_protocol::consensus::NetworkType::Test,
+        ] {
+            let wrong =
+                zcash_address::ZcashAddress::from_transparent_p2pkh(wrong_network, hash).encode();
+            assert!(
+                !validate_address(Network::CatecashTestnet, wrong)
+                    .unwrap()
+                    .is_valid
+            );
+        }
+        assert!(
+            !validate_address(Network::CatecashDevnet, testnet)
+                .unwrap()
+                .is_valid
+        );
+    }
 }

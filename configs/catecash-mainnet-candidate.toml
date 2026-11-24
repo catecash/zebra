@@ -1,0 +1,17 @@
+# Local-only Catecash mainnet candidate node. Mining is disabled until
+# the verified 202,000-address payout pool is integrated with per-block rotation.
+
+[network]
+network = "CatecashMainnet"
+listen_addr = "127.0.0.1:34333"
+initial_mainnet_peers = []
+initial_testnet_peers = ["127.0.0.1:34334"]
+peerset_initial_target_size = 1
+cache_dir = false
+
+[state]
+cache_dir = "target/catecash-mainnet-candidate-miner-state"
+
+[rpc]
+listen_addr = "127.0.0.1:34332"
+enable_cookie_auth = false

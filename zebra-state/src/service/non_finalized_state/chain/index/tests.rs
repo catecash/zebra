@@ -12,7 +12,7 @@ use zebra_chain::{
 #[derive(Debug, Default)]
 struct ExpectedTransfers {
     balance: i128,
-    received: u64,
+    received: u128,
     created: BTreeMap<OutputLocation, transparent::Output>,
     spent: BTreeSet<OutputLocation>,
     tx_ids: BTreeMap<TransactionLocation, transaction::Hash>,
@@ -104,7 +104,10 @@ pub(in crate::service::non_finalized_state) fn assert_legacy_indexes(chain: &Cha
                     let transfers = addresses.entry(address).or_default();
                     let value = utxo.utxo.output.value();
                     transfers.balance += i128::from(value.zatoshis());
-                    transfers.received = transfers.received.saturating_add(u64::from(value));
+                    transfers.received = transfers
+                        .received
+                        .checked_add(u128::from(u64::from(value)))
+                        .unwrap();
                     let location =
                         OutputLocation::from_outpoint(transaction_location(utxo), &outpoint);
                     assert!(transfers
@@ -133,15 +136,12 @@ pub(in crate::service::non_finalized_state) fn assert_legacy_indexes(chain: &Cha
     // Each address query matches the replay, for each address and for all of them at once.
     let all_heights = Height(0)..=Height::MAX;
     let mut all_balance = 0i128;
-    let mut all_received = 0u64;
+    let mut all_received = 0u128;
     for (address, expected) in &addresses {
         let address = HashSet::from([*address]);
         assert_eq!(
             chain.partial_transparent_balance_change_from(&address, Height(0)),
-            (
-                Amount::try_from(expected.balance).unwrap(),
-                expected.received
-            ),
+            (expected.balance, expected.received),
         );
         // The chain leaves out the outputs it creates and then spends.
         let unspent_created = expected
@@ -163,12 +163,12 @@ pub(in crate::service::non_finalized_state) fn assert_legacy_indexes(chain: &Cha
             expected.tx_ids,
         );
         all_balance += expected.balance;
-        all_received = all_received.saturating_add(expected.received);
+        all_received = all_received.checked_add(expected.received).unwrap();
     }
     let all_addresses: HashSet<_> = addresses.keys().copied().collect();
     assert_eq!(
         chain.partial_transparent_balance_change_from(&all_addresses, Height(0)),
-        (Amount::try_from(all_balance).unwrap(), all_received),
+        (all_balance, all_received),
     );
 
     // Querying more addresses than a block changes scans the block instead of looking each one
@@ -228,9 +228,9 @@ pub(in crate::service::non_finalized_state) fn assert_legacy_indexes(chain: &Cha
     }
 }
 
-/// Regression test for #10556: cumulative receipts saturate rather than overflow.
+/// Cumulative receipts remain exact beyond the old `u64` ceiling.
 #[test]
-fn received_saturates_past_u64_max() {
+fn received_remains_exact_past_u64_max() {
     let address = transparent::Address::from_pub_key_hash(
         zebra_chain::parameters::NetworkKind::Mainnet,
         [7; 20],
@@ -247,8 +247,8 @@ fn received_saturates_past_u64_max() {
     let mut chain = Chain::default();
     for height in 0..block_count {
         let transfers = AddressBlockTransfers {
-            balance: Amount::zero(),
-            received: u64::from(max_money),
+            balance: 0,
+            received: u128::from(u64::from(max_money)),
             created: vec![(
                 OutputLocation::from_usize(Height(height), 0, 0),
                 utxo.clone(),
@@ -266,5 +266,8 @@ fn received_saturates_past_u64_max() {
 
     let (_balance, received) =
         chain.partial_transparent_balance_change_from(&HashSet::from([address]), Height(0));
-    assert_eq!(received, u64::MAX);
+    assert_eq!(
+        received,
+        u128::from(block_count) * u128::from(u64::from(max_money))
+    );
 }
