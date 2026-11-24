@@ -1039,11 +1039,10 @@ impl config::Override<ZebradConfig> for StartCmd {
         if matches!(
             config.network.network,
             zebra_chain::parameters::Network::CatecashMainnet
-        ) && (!catecash_mainnet_candidate_p2p_listener(config.network.listen_addr)
-            || config.network.external_addr.is_some())
+        ) && !catecash_mainnet_p2p_listener(config.network.listen_addr)
         {
             return Err(std::io::Error::other(
-                "Catecash mainnet candidate P2P must bind loopback or an approved private host",
+                "Catecash mainnet P2P must use port 34333 unless bound to loopback",
             )
             .into());
         }
@@ -1105,16 +1104,8 @@ impl config::Override<ZebradConfig> for StartCmd {
     }
 }
 
-/// Keep the candidate network on the three dedicated hosts until public launch review.
-/// The host firewall separately limits which of these hosts may connect to each listener.
-fn catecash_mainnet_candidate_p2p_listener(addr: SocketAddr) -> bool {
-    addr.ip().is_loopback()
-        || matches!(
-            addr,
-            SocketAddr::V4(private)
-                if private.port() == 34333
-                    && matches!(private.ip().octets(), [10, 58, 1, 1..=3])
-        )
+fn catecash_mainnet_p2p_listener(addr: SocketAddr) -> bool {
+    addr.ip().is_loopback() || addr.port() == 34333
 }
 
 #[cfg(test)]
@@ -1122,34 +1113,25 @@ mod tests {
     use abscissa_core::config::Override;
     use color_eyre::eyre::eyre;
 
-    use super::{catecash_mainnet_candidate_p2p_listener, StartCmd};
+    use super::{catecash_mainnet_p2p_listener, StartCmd};
     use crate::components::zcashd_compat;
     use crate::config::ZebradConfig;
 
     #[test]
-    fn mainnet_candidate_p2p_accepts_only_dedicated_private_hosts() {
-        assert!(catecash_mainnet_candidate_p2p_listener(
+    fn mainnet_p2p_accepts_public_port_and_loopback() {
+        assert!(catecash_mainnet_p2p_listener(
             "127.0.0.1:34333".parse().unwrap()
         ));
-        for host in 1..=3 {
-            assert!(catecash_mainnet_candidate_p2p_listener(
-                format!("10.58.1.{host}:34333").parse().unwrap()
-            ));
+        for address in ["10.58.1.1:34333", "0.0.0.0:34333", "[::]:34333"] {
+            assert!(catecash_mainnet_p2p_listener(address.parse().unwrap()));
         }
-        for address in [
-            "10.58.1.4:34333",
-            "10.58.1.1:34334",
-            "0.0.0.0:34333",
-            "[::]:34333",
-        ] {
-            assert!(!catecash_mainnet_candidate_p2p_listener(
-                address.parse().unwrap()
-            ));
+        for address in ["10.58.1.1:34334", "0.0.0.0:34334", "[::]:34334"] {
+            assert!(!catecash_mainnet_p2p_listener(address.parse().unwrap()));
         }
     }
 
     #[test]
-    fn mainnet_candidate_p2p_still_rejects_public_advertising() {
+    fn mainnet_p2p_accepts_public_advertising() {
         let cmd = StartCmd {
             filters: Vec::new(),
             zcashd_compat: false,
@@ -1157,12 +1139,13 @@ mod tests {
         };
         let mut config = ZebradConfig::default();
         config.network.network = zebra_chain::parameters::Network::CatecashMainnet;
-        config.network.listen_addr = "10.58.1.1:34333".parse().unwrap();
+        config.network.listen_addr = "0.0.0.0:34333".parse().unwrap();
         cmd.override_config(config.clone())
-            .expect("approved private candidate listener should start");
+            .expect("public mainnet listener should start");
 
-        config.network.external_addr = Some("10.58.1.1:34333".parse().unwrap());
-        assert!(cmd.override_config(config).is_err());
+        config.network.external_addr = Some("2.31.189.104:34333".parse().unwrap());
+        cmd.override_config(config)
+            .expect("public address should be advertised");
     }
 
     #[test]

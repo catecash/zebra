@@ -69,6 +69,11 @@ const DEFAULT_TESTNET_PEERS: [&str; 3] = [
     "testnet.seeder.zfnd.org:18233",
 ];
 const CATECASH_DEVNET_SEED: &str = "devnet.catecash.com:34343";
+const CATECASH_MAINNET_SEEDS: [&str; 3] = [
+    "mainnet.catecash.com:34333",
+    "2.31.189.104:34333",
+    "178.104.149.171:34333",
+];
 
 /// Configuration for networking code.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -288,12 +293,22 @@ impl Config {
                 }
                 peers
             }
-            Network::CatecashMainnet => self
-                .initial_testnet_peers
-                .iter()
-                .filter(|peer| !is_default_initial_peer(peer))
-                .cloned()
-                .collect(),
+            Network::CatecashMainnet => {
+                let mut peers: IndexSet<String> = self
+                    .initial_testnet_peers
+                    .iter()
+                    .filter(|peer| !is_default_initial_peer(peer))
+                    .cloned()
+                    .collect();
+                if self
+                    .initial_testnet_peers
+                    .iter()
+                    .any(|peer| is_default_initial_peer(peer))
+                {
+                    peers.extend(CATECASH_MAINNET_SEEDS.map(str::to_string));
+                }
+                peers
+            }
             Network::CatecashTestnet => self
                 .initial_testnet_peers
                 .iter()

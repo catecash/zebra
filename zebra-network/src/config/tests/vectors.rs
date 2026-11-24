@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[test]
-fn catecash_devnet_uses_its_dns_seed_only_when_defaults_are_present() {
+fn catecash_networks_use_their_seeds_only_when_defaults_are_present() {
     let default_devnet = Config {
         network: Network::CatecashDevnet,
         ..Config::default()
@@ -36,11 +36,31 @@ fn catecash_devnet_uses_its_dns_seed_only_when_defaults_are_present() {
         toml::from_str("network = 'CatecashDevnet'\ninitial_testnet_peers = []").unwrap();
     assert!(isolated_devnet.initial_peer_hostnames().is_empty());
 
-    let mainnet_candidate = Config {
+    let default_mainnet = Config {
         network: Network::CatecashMainnet,
         ..Config::default()
     };
-    assert!(mainnet_candidate.initial_peer_hostnames().is_empty());
+    assert_eq!(
+        default_mainnet.initial_peer_hostnames(),
+        [
+            "mainnet.catecash.com:34333".to_string(),
+            "2.31.189.104:34333".to_string(),
+            "178.104.149.171:34333".to_string(),
+        ]
+        .into()
+    );
+
+    let isolated_mainnet: Config =
+        toml::from_str("network = 'CatecashMainnet'\ninitial_testnet_peers = []").unwrap();
+    assert!(isolated_mainnet.initial_peer_hostnames().is_empty());
+
+    let private_mainnet: Config =
+        toml::from_str("network = 'CatecashMainnet'\ninitial_testnet_peers = ['10.58.1.2:34333']")
+            .unwrap();
+    assert_eq!(
+        private_mainnet.initial_peer_hostnames(),
+        ["10.58.1.2:34333".to_string()].into()
+    );
 }
 
 #[test]
