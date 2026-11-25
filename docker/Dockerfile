@@ -186,6 +186,7 @@ RUN --mount=type=bind,source=tower-batch-control,target=tower-batch-control \
     --mount=type=bind,source=zebra-test,target=zebra-test \
     --mount=type=bind,source=zebra-utils,target=zebra-utils \
     --mount=type=bind,source=zebrad,target=zebrad \
+    --mount=type=bind,source=vendor,target=vendor \
     --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
     --mount=type=cache,id=zebra-release-target,target=${CARGO_TARGET_DIR},sharing=locked \

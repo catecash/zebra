@@ -69,10 +69,14 @@ const DEFAULT_TESTNET_PEERS: [&str; 3] = [
     "testnet.seeder.zfnd.org:18233",
 ];
 const CATECASH_DEVNET_SEED: &str = "devnet.catecash.com:34343";
-const CATECASH_MAINNET_SEEDS: [&str; 3] = [
+const CATECASH_MAINNET_SEEDS: [&str; 7] = [
     "mainnet.catecash.com:34333",
     "2.31.189.104:34333",
     "178.104.149.171:34333",
+    "2.31.190.23:34333",
+    "78.18.11.188:34333",
+    "178.105.239.117:34333",
+    "2.31.179.185:34333",
 ];
 
 /// Configuration for networking code.

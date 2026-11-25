@@ -46,6 +46,10 @@ fn catecash_networks_use_their_seeds_only_when_defaults_are_present() {
             "mainnet.catecash.com:34333".to_string(),
             "2.31.189.104:34333".to_string(),
             "178.104.149.171:34333".to_string(),
+            "2.31.190.23:34333".to_string(),
+            "78.18.11.188:34333".to_string(),
+            "178.105.239.117:34333".to_string(),
+            "2.31.179.185:34333".to_string(),
         ]
         .into()
     );

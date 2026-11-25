@@ -1,0 +1,18 @@
+services:
+  seed:
+    image: catecash-zebra-seed:9a31273
+    container_name: catecash-mainnet-seed
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 60s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CONFIG_FILE_PATH: /home/zebra/.config/zebrad.toml
+    volumes:
+      - /etc/catecash/mainnet-seed.toml:/home/zebra/.config/zebrad.toml:ro
+      - /var/lib/catecash-mainnet-seed:/home/zebra/.cache
+    tmpfs:
+      - /tmp
+    command: ["zebrad", "start"]
