@@ -1,17 +1,17 @@
 # Catecash vision
 
-Catecash is a proposed independent cryptocurrency: **Doge to Cate, now with privacy**. The idea combines Dogecoin's continuing miner-funded issuance with Zebra's Equihash proof of work and a goal of retaining the full Zcash feature set, especially shielded transactions. The cat identity is its own; Catecash is not a Dogecoin chain fork or an existing Zcash network.
+Catecash is an independent cryptocurrency: **Doge to Cate, now with privacy**. The idea combines Dogecoin's continuing miner-funded issuance with Zebra's Equihash proof of work and a goal of retaining the full Zcash feature set, especially shielded transactions. The cat identity is its own; Catecash is not a Dogecoin chain fork or an existing Zcash network.
 
-The project is in development. There is no live Catecash network or token. The statements below are design commitments and targets, not claims that the protocol has been implemented or audited.
+Catecash mainnet mining is live. This document records the original design commitments and targets; verify current network parameters against the running network and source code.
 
-## Proposed launch commitments
+## Design commitments
 
 - **Fair launch:** no spendable premine, no founder or team allocation, and no reserved insider supply. All circulating coins are intended to enter through public mining rewards.
 - **Community ownership:** open source code, open participation, and no reserved supply controlled by a founding group. Governance and stewardship processes still need to be specified in public.
 - **Privacy as a core capability:** target the full Zcash feature set on an independent network, including shielded and transparent transaction support, subject to implementation and security testing.
 - **Miner-funded security:** use Equihash proof of work and continuing block rewards, with no fixed end date for issuance.
 
-## Proposed monetary and mining model
+## Monetary and mining design targets
 
 | Parameter | Catecash target |
 | --- | --- |
@@ -33,7 +33,7 @@ The project is in development. There is no live Catecash network or token. The s
 | Coinbase maturity | 240 blocks (~100 minutes at the target rate) |
 | Miner signaling | 10,080-block window; 95% threshold for configured versionbits deployments |
 
-The daily and yearly issuance figures assume blocks arrive exactly on the 25-second target; actual issuance varies with block production. These are targets for a new chain. The local devnet has a distinct development genesis, network type, provisional address encodings, experimental reward rules, and NU7 validation from height one, but still inherits other Zcash consensus rules. Mainnet and testnet genesis configuration, final address formats, network identifiers, difficulty rules, launch validation details, and wallet support require a complete protocol specification and tests before launch. Incompatible future upgrades require hard forks; miner signaling applies only to soft-fork deployments designed for it.
+The daily and yearly issuance figures assume blocks arrive exactly on the 25-second target; actual issuance varies with block production. These figures were design targets; verify current parameters against the running network. The local devnet has a distinct development genesis, network type, provisional address encodings, experimental reward rules, and NU7 validation from height one, but still inherits other Zcash consensus rules. Incompatible future upgrades require hard forks; miner signaling applies only to soft-fork deployments designed for it.
 
 ## What “privacy” means here
 
