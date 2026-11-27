@@ -1,0 +1,17 @@
+[Unit]
+Description=Catecash mainnet Zebra checkpoint 8000 container
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f catecash-mainnet-candidate
+ExecStart=/usr/bin/docker run --rm --name catecash-mainnet-candidate --network host --read-only --cap-drop=ALL --security-opt=no-new-privileges --user 999:988 --env XDG_CACHE_HOME=/var/lib/catecash-mainnet-candidate/.cache --tmpfs /tmp:rw,nosuid,nodev,size=64m --volume /etc/catecash/mainnet-candidate.toml:/etc/catecash/mainnet-candidate.toml:ro --volume /var/lib/catecash-mainnet-candidate:/var/lib/catecash-mainnet-candidate:rw --entrypoint /usr/local/bin/zebrad catecash-zebra:checkpoint-8000-20261126-amd64 -c /etc/catecash/mainnet-candidate.toml start
+ExecStop=/usr/bin/docker stop -t 30 catecash-mainnet-candidate
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

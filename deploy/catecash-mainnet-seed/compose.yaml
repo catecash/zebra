@@ -1,6 +1,6 @@
 services:
   seed:
-    image: catecash-zebra-seed:9a31273
+    image: catecash-zebra:checkpoint-8000-20261126-amd64
     container_name: catecash-mainnet-seed
     network_mode: host
     restart: unless-stopped

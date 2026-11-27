@@ -280,6 +280,11 @@ fn checkpoint_list_hard_coded_max_gap_testnet() -> Result<(), BoxError> {
     checkpoint_list_hard_coded_max_gap(Network::new_default_testnet())
 }
 
+#[test]
+fn checkpoint_list_hard_coded_max_gap_catecash_mainnet() -> Result<(), BoxError> {
+    checkpoint_list_hard_coded_max_gap(Network::CatecashMainnet)
+}
+
 /// Check that the hard-coded checkpoints are within [`MAX_CHECKPOINT_HEIGHT_GAP`],
 /// and a calculated minimum number of blocks. This also checks the heights are in order.
 ///

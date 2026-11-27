@@ -39,6 +39,15 @@ fn catecash_mainnet_candidate_identity_is_separate() {
         network.checkpoint_list().hash(block::Height::MIN),
         Some(network.genesis_hash())
     );
+    assert_eq!(network.checkpoint_list().max_height(), block::Height(8000));
+    assert_eq!(
+        network
+            .checkpoint_list()
+            .hash(block::Height(8000))
+            .unwrap()
+            .to_string(),
+        "002177e57574550bb0de6afedc895ac89e64da0f1d14f65e14e4edc676820673"
+    );
     assert_eq!(NetworkUpgrade::current(&network, block::Height(1)), Nu7);
     assert_eq!(
         ConsensusBranchId::current(&network, block::Height(1)),

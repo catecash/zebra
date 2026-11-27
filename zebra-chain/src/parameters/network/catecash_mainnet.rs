@@ -30,10 +30,10 @@ pub fn genesis_hash() -> block::Hash {
         .expect("fixed Catecash mainnet candidate genesis hash parses")
 }
 
-/// Returns the height-zero candidate checkpoint.
+/// Returns checkpoints for the settled candidate mainnet chain.
 pub fn checkpoint_list() -> Arc<CheckpointList> {
     Arc::new(
-        format!("0 {GENESIS_HASH}")
+        include_str!("catecash-mainnet-checkpoints.txt")
             .parse()
             .expect("fixed Catecash mainnet candidate checkpoint parses"),
     )
