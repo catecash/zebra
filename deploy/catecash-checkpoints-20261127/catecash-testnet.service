@@ -1,0 +1,20 @@
+[Unit]
+Description=Catecash testnet checkpoint container
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment=HOME=/root
+ExecStartPre=-/usr/bin/podman rm -f catecash-testnet
+ExecStart=/usr/bin/podman run --rm --replace --pull=never --name catecash-testnet --network host --read-only --cap-drop=ALL --security-opt=no-new-privileges --userns=host --user 999:988 --env XDG_CACHE_HOME=/var/lib/catecash-testnet/.cache --tmpfs /tmp:rw,nosuid,nodev,size=64m --volume /etc/catecash/testnet.toml:/etc/catecash/testnet.toml:ro --volume /var/lib/catecash-testnet:/var/lib/catecash-testnet:rw --entrypoint /usr/local/bin/zebrad catecash-zebra:checkpoints-20261127-arm64 -c /etc/catecash/testnet.toml start
+ExecStop=/usr/bin/podman stop -t 30 catecash-testnet
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

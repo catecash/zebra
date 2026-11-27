@@ -9,14 +9,15 @@ Checkpoint lists live under `zebra-chain/src/parameters/network/` and use
 
 | Network | Last checkpoint | Hash | Independent agreement |
 | --- | ---: | --- | --- |
-| Devnet | 10,400 | `037da4e61a511f6799c20170e361675a618cf1057dd6f44bde8fb759f21e520e` | Miner and third hosted verifier |
-| Testnet | 10,000 | `0002e294701d6f00864581e4dcbece97c5f901edbd6b64c4344435d28cae61de` | Both hosted testnet nodes |
-| Mainnet candidate | 8,000 | `002177e57574550bb0de6afedc895ac89e64da0f1d14f65e14e4edc676820673` | Five hosted RPC nodes; already deployed |
+| Devnet | 12,400 | `062a494402a94a9ff3654b5599149230df2bbc929f29213402e8a1505b3b83b2` | Miner, peer, and third hosted verifier |
+| Testnet | 11,600 | `01742b902bdfe63d4dd5cf79611d1895315287c493abffc3446120d7bc103ff6` | Both hosted testnet nodes |
+| Mainnet candidate | 10,000 | `0036fdb6089d913ec44451ee9316bd5e12e6f20ebad29e6a8c300ee0d30732fd` | All five hosted RPC nodes |
 
-At selection, devnet was above height 11,769 and testnet above height 11,064.
-All listed devnet and testnet hashes, including genesis, were compared on the
-two corresponding nodes. The mainnet checkpoint was independently verified
-and deployed during the 2026-11-26 incident; see the workspace incident record.
+At selection, devnet was at height 13,577, testnet at 12,925, and mainnet at
+11,358. Every added 400-block hash and each network genesis agreed across the
+nodes listed above. The new endpoints are more than 1,000 blocks behind the
+observed tips. The earlier mainnet height-8,000 deployment is described in the
+workspace incident record.
 
 ## Promotion gates
 
@@ -27,14 +28,14 @@ and deployed during the 2026-11-26 incident; see the workspace incident record.
    devnet verifier first, then peer, then miner to the container, one at a
    time. Preserve their separate state and RPC cookie directories as mounts.
    Confirm each reports `catecash-devnet`, the expected genesis and height
-   10,400 hash, logs checkpoint validation, and resumes sync. Confirm a new
+   12,400 hash, logs checkpoint validation, and resumes sync. Confirm a new
    block and agreement between the miner and verifier before continuing.
 3. Back up both testnet configurations, service units, and state. Move the
    first testnet node, then the second, one at a time. Confirm each reports
-   `catecash-testnet`, the expected genesis and height 10,000 hash, logs
+   `catecash-testnet`, the expected genesis and height 11,600 hash, logs
    checkpoint validation, and resumes sync. Confirm both agree on a new block
    and the node 2 Zaino gateway remains ready before continuing.
-4. Confirm the five hosted mainnet RPC nodes still agree on height 8,000 and
+4. Confirm the five hosted mainnet RPC nodes still agree on height 10,000 and
    report checkpoint validation. If promoting a new image on mainnet, back up
    each host and roll it out one at a time, checking chain identity, tip
    agreement, wallet gateway, and public seed links after each host.
@@ -70,3 +71,41 @@ The archive checksum and image ID were checked on all three destination hosts.
 The original units, TOML files, and stopped-state archives are restricted to
 `/var/backups/catecash/checkpoint-2026-11-26/` on each devnet and testnet host.
 The state archives include RPC cookie material and must stay on those hosts.
+
+## Rollout record (2026-11-27 UTC)
+
+The `checkpoints-20261127` images were built from the updated checkpoint lists
+with Rust 1.91.0 and `internal-miner`. The ARM image ID is
+`sha256:43b6be2da11d124dc539a612f79c970ae33504c1e67a731bf40a578f69ad1fc5`;
+its transferred gzip archive SHA-256 is
+`219304d5ba11daa5fb28e366d861fc51c1de70e9fe1e2bd5a551a4f18f76c138`.
+The x86 image ID is
+`sha256:a71b0b84f8f184239bc8d28f3840b8cbb6ae6cef828597ad2e6a35017bc52b96`;
+its archive SHA-256 is
+`4f0c1226a3496482d256d53129ded5bd29eb0f7c8e44a7a648ba220eb302ebf7`.
+Archive checksums and image architectures were verified on each destination.
+The two focused `zebra-chain` checkpoint tests passed before deployment.
+
+- Devnet: verifier, peer, then miner were moved to the new ARM image with
+  separate stopped-state backups. All three logged checkpoint validation at
+  12,400 and agreed at height 13,601 on
+  `053ca5fb4f5f780c8dd4a2a627188727457101dc8c2300025d9d1b18787bc08a`.
+- Testnet: node 1, then node 2 were moved to the ARM image. Both logged
+  checkpoint validation at 11,600 and agreed at height 12,954 on
+  `00d6f19f076ba1399760af8cb20695ad73dd422aca4f09eaa4b903e929126873`.
+  Node 2's dependent Zaino service was restarted and reported
+  `chain_state: Ready, grpc: Ready`. Public `GetLightdInfo` returned the
+  `catecash-testnet` identity.
+- Mainnet: miners 1 and 2, miners 3 and 4, then the wallet gateway were
+  moved one at a time. The three public seeds followed one at a time. All
+  eight containers logged checkpoint validation at 10,000. The five RPC
+  nodes agreed at height 11,376 on
+  `000ddf972bd403e0ed3c46d7c6b7718b37e4b85ba70c9180481760e3527e9f16`;
+  each reached all three public seeds over TCP. The gateway's dependent Zaino
+  service returned to `chain_state: Ready, grpc: Ready`, and public
+  `GetLightdInfo` returned the `catecash-mainnet` identity.
+
+Each host retains its previous unit or Compose file, live TOML, and stopped
+state in the restricted `/var/backups/catecash/checkpoints-2026-11-27/`
+directory. These archives include RPC cookie material and must remain on
+their hosts. The prior container images remain available for rollback.

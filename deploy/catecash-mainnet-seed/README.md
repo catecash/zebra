@@ -12,13 +12,13 @@ Use `mainnet-seed.toml` on the dedicated seed VM at `2.31.179.185`. Use
 seed containers beside miners 3 and 4. Those miners keep their own loopback
 listeners and payout rotation. The seed containers have no mining section.
 
-The deployed image is built from the checkpoint-8000 source using the pinned
+The deployed image is built from the checkpoint source using the pinned
 base images in `docker/Dockerfile`:
 
 ```sh
 docker buildx build --progress=plain --load --target runtime \
   --build-arg FEATURES=internal-miner \
-  -f docker/Dockerfile -t catecash-zebra:checkpoint-8000-20261126-amd64 .
+  -f docker/Dockerfile -t catecash-zebra:checkpoints-20261127-amd64 .
 ```
 
 Copy only the image and the matching nonsecret TOML and Compose files to each

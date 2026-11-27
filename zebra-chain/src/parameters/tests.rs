@@ -16,13 +16,13 @@ fn catecash_devnet_and_testnet_checkpoints_match_settled_chains() {
     for (network, height, expected_hash) in [
         (
             Network::CatecashDevnet,
-            block::Height(10_400),
-            "037da4e61a511f6799c20170e361675a618cf1057dd6f44bde8fb759f21e520e",
+            block::Height(12_400),
+            "062a494402a94a9ff3654b5599149230df2bbc929f29213402e8a1505b3b83b2",
         ),
         (
             Network::CatecashTestnet,
-            block::Height(10_000),
-            "0002e294701d6f00864581e4dcbece97c5f901edbd6b64c4344435d28cae61de",
+            block::Height(11_600),
+            "01742b902bdfe63d4dd5cf79611d1895315287c493abffc3446120d7bc103ff6",
         ),
     ] {
         let checkpoints = network.checkpoint_list();
@@ -67,14 +67,14 @@ fn catecash_mainnet_candidate_identity_is_separate() {
         network.checkpoint_list().hash(block::Height::MIN),
         Some(network.genesis_hash())
     );
-    assert_eq!(network.checkpoint_list().max_height(), block::Height(8000));
+    assert_eq!(network.checkpoint_list().max_height(), block::Height(10000));
     assert_eq!(
         network
             .checkpoint_list()
-            .hash(block::Height(8000))
+            .hash(block::Height(10000))
             .unwrap()
             .to_string(),
-        "002177e57574550bb0de6afedc895ac89e64da0f1d14f65e14e4edc676820673"
+        "0036fdb6089d913ec44451ee9316bd5e12e6f20ebad29e6a8c300ee0d30732fd"
     );
     assert_eq!(NetworkUpgrade::current(&network, block::Height(1)), Nu7);
     assert_eq!(
