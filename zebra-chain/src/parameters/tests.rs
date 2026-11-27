@@ -12,6 +12,34 @@ use Network::*;
 use NetworkUpgrade::*;
 
 #[test]
+fn catecash_devnet_and_testnet_checkpoints_match_settled_chains() {
+    for (network, height, expected_hash) in [
+        (
+            Network::CatecashDevnet,
+            block::Height(10_400),
+            "037da4e61a511f6799c20170e361675a618cf1057dd6f44bde8fb759f21e520e",
+        ),
+        (
+            Network::CatecashTestnet,
+            block::Height(10_000),
+            "0002e294701d6f00864581e4dcbece97c5f901edbd6b64c4344435d28cae61de",
+        ),
+    ] {
+        let checkpoints = network.checkpoint_list();
+        assert_eq!(
+            checkpoints.hash(block::Height::MIN),
+            Some(network.genesis_hash())
+        );
+        assert_eq!(checkpoints.max_height(), height);
+        assert_eq!(checkpoints.hash(height).unwrap().to_string(), expected_hash);
+        assert_eq!(checkpoints.len(), height.0 as usize / 400 + 1);
+        assert!(checkpoints
+            .iter()
+            .all(|(checkpoint_height, _)| checkpoint_height.0 % 400 == 0));
+    }
+}
+
+#[test]
 fn catecash_mainnet_candidate_identity_is_separate() {
     use zcash_address::{
         unified::{Address as UnifiedAddress, Encoding, MetadataItem, Receiver, Revision, Uitem},

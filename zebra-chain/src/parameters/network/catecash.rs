@@ -31,12 +31,12 @@ pub fn genesis_hash() -> block::Hash {
         .expect("fixed Catecash genesis hash parses")
 }
 
-/// Returns the height-zero development checkpoint.
+/// Returns checkpoints for the settled development chain.
 pub fn checkpoint_list() -> Arc<CheckpointList> {
     Arc::new(
-        format!("0 {GENESIS_HASH}")
+        include_str!("catecash-devnet-checkpoints.txt")
             .parse()
-            .expect("fixed Catecash genesis checkpoint parses"),
+            .expect("fixed Catecash devnet checkpoints parse"),
     )
 }
 
